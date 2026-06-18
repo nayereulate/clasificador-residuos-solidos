@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}EcoTrack{% endblock %} – EcoTrack</title>
+
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Font Awesome 6.5 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+    <style>
+        /* ═══════════════════════════════════════════════════════
+           VARIABLES CSS (Light / Dark mode)
+        ═══════════════════════════════════════════════════════ */
+        :root {
+            --sidebar-width: 256px;
+            --topbar-height: 60px;
+            --sidebar-bg: #0f2d1f;
+            --sidebar-border: rgba(255,255,255,0.07);
+            --sidebar-text: rgba(255,255,255,0.72);
+            --sidebar-active-bg: rgba(82,183,136,0.14);
+            --sidebar-active-text: #52b788;
+            --sidebar-active-border: #52b788;
+            --sidebar-hover-bg: rgba(255,255,255,0.05);
+            --sidebar-hover-text: #fff;
+            --sidebar-section: rgba(255,255,255,0.28);
+            --primary: #1b4332;
+            --primary-hover: #163829;
+            --primary-light: #2d6a4f;
+            --accent: #52b788;
+            --accent-bg: rgba(82,183,136,0.1);
+            --accent-text: #1b4332;
+            --body-bg: #f0f4f8;
+            --card-bg: #ffffff;
+            --card-border: #e5eaf0;
+            --card-shadow: 0 1px 8px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+            --topbar-bg: #ffffff;
+            --topbar-border: #e5eaf0;
+            --text-primary: #111827;
+            --text-secondary: #4b5563;
+            --text-muted: #9ca3af;
+            --input-bg: #ffffff;
+            --input-border: #d1d5db;
+            --table-head-bg: #f0f7f3;
+            --table-border: #e5eaf0;
+            --badge-eco-bg: #d8f3dc;
+            --badge-eco-text: #1b4332;
+            --divider: #e5eaf0;
+            --btn-icon-bg: #f3f4f6;
+            --btn-icon-hover: #e5e7eb;
+            --dropdown-bg: #ffffff;
+            --dropdown-border: #e5eaf0;
+        }
+
+        [data-theme="dark"] {
+            --body-bg: #0f172a;
+            --card-bg: #1e293b;
+            --card-border: #2d3748;
+            --card-shadow: 0 1px 8px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.2);
+            --topbar-bg: #1e293b;
+            --topbar-border: #2d3748;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --input-bg: #0f172a;
+            --input-border: #334155;
+            --table-head-bg: #1a2744;
+            --table-border: #2d3748;
+            --badge-eco-bg: rgba(82,183,136,0.15);
+            --badge-eco-text: #52b788;
+            --divider: #2d3748;
+            --btn-icon-bg: #0f172a;
+            --btn-icon-hover: #1e293b;
+            --dropdown-bg: #1e293b;
+            --dropdown-border: #2d3748;
+            --sidebar-bg: #061813;
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           RESET / BASE
+        ═══════════════════════════════════════════════════════ */
+        *, *::before, *::after { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--body-bg);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            transition: background 0.25s ease, color 0.25s ease;
+            font-size: 0.875rem;
+            line-height: 1.6;
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           SIDEBAR
+        ═══════════════════════════════════════════════════════ */
+        .sidebar {
+            position: fixed;
+            inset-block: 0;
+            left: 0;
+            width: var(--sidebar-width);
+            background: var(--sidebar-bg);
+            display: flex;
+            flex-direction: column;
+            z-index: 1040;
+            transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+            overflow: hidden;
+        }
+
+        /* Brand */
+        .sb-brand {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 18px 20px 14px;
+            border-bottom: 1px solid var(--sidebar-border);
+            text-decoration: none;
+            flex-shrink: 0;
+        }
+
+        .sb-brand-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #52b788 0%, #1b4332 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+            flex-shrink: 0;
+        }
+
+        .sb-brand-name {
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+        }
+
+        .sb-brand-sub {
+            color: rgba(255,255,255,0.38);
+            font-size: 0.65rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        /* Nav scroll area */
+        .sb-nav {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 0 8px;
+            scrollbar-width: none;
+        }
+        .sb-nav::-webkit-scrollbar { display: none; }
+
+        .sb-section {
+            font-size: 0.63rem;
+            font-weight: 700;
+            letter-spacing: 1.1px;
+            text-transform: uppercase;
+            color: var(--sidebar-section);
+            padding: 14px 20px 5px;
+        }
+
+        .sb-link {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 8px 20px;
+            color: var(--sidebar-text);
+            text-decoration: none;
+            font-size: 0.82rem;
+            font-weight: 500;
+            transition: background 0.12s, color 0.12s;
+            border-left: 3px solid transparent;
+            position: relative;
+        }
+
+        .sb-link:hover {
+            background: var(--sidebar-hover-bg);
+            color: var(--sidebar-hover-text);
+        }
+
+        .sb-link.active {
+            background: var(--sidebar-active-bg);
+            color: var(--sidebar-active-text);
+            border-left-color: var(--sidebar-active-border);
+            font-weight: 600;
+        }
+
+        .sb-link .sb-icon {
+            width: 16px;
+            text-align: center;
+            font-size: 13px;
+            flex-shrink: 0;
+        }
+
+        .sb-badge {
+            margin-left: auto;
+            background: var(--accent);
+            color: #0a2015;
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 999px;
+            min-width: 20px;
+            text-align: center;
+        }
+
+        /* User footer */
+        .sb-footer {
+            padding: 12px 16px;
+            border-top: 1px solid var(--sidebar-border);
+            flex-shrink: 0;
+        }
+
+        .sb-user {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.12s;
+            text-decoration: none;
+        }
+
+        .sb-user:hover { background: var(--sidebar-hover-bg); }
+
+        .sb-avatar {
+            width: 34px;
+            height: 34px;
+            border-radius: 9px;
+            background: linear-gradient(135deg, var(--accent), var(--primary));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.8rem;
+            color: #fff;
+            flex-shrink: 0;
+        }
+
+        .sb-user-name {
+            color: #fff;
+            font-size: 0.8rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sb-user-role {
+            color: rgba(255,255,255,0.38);
+            font-size: 0.67rem;
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           MAIN WRAPPER
+        ═══════════════════════════════════════════════════════ */
+        .main-wrapper {
+            margin-left: var(--sidebar-width);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            transition: margin-left 0.3s cubic-bezier(0.4,0,0.2,1);
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           TOP BAR
+        ═══════════════════════════════════════════════════════ */
+        .topbar {
+            height: var(--topbar-height);
+            background: var(--topbar-bg);
+            border-bottom: 1px solid var(--topbar-border);
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            gap: 14px;
+            position: sticky;
+            top: 0;
+            z-index: 900;
+            transition: background 0.25s, border-color 0.25s;
+        }
+
+        .topbar-hamburger {
+            display: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: none;
+            background: var(--btn-icon-bg);
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            cursor: pointer;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: background 0.12s;
+        }
+
+        .topbar-hamburger:hover { background: var(--btn-icon-hover); }
+
+        .topbar-info { flex: 1; min-width: 0; }
+
+        .topbar-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .topbar-breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        .topbar-breadcrumb a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .topbar-actions { display: flex; align-items: center; gap: 6px; }
+
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 9px;
+            border: 1px solid var(--card-border);
+            background: var(--btn-icon-bg);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.85rem;
+            text-decoration: none;
+            transition: all 0.12s;
+        }
+
+        .icon-btn:hover {
+            background: var(--btn-icon-hover);
+            color: var(--text-primary);
+            border-color: var(--input-border);
+        }
+
+        .user-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 12px 5px 6px;
+            border-radius: 9px;
+            border: 1px solid var(--card-border);
+            background: var(--btn-icon-bg);
+            cursor: pointer;
+            text-decoration: none;
+            color: var(--text-primary);
+            transition: all 0.12s;
+        }
+
+        .user-btn:hover { background: var(--btn-icon-hover); }
+
+        .user-btn-avatar {
+            width: 26px;
+            height: 26px;
+            border-radius: 7px;
+            background: linear-gradient(135deg, var(--accent), var(--primary));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .user-btn-name {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           PAGE CONTENT
+        ═══════════════════════════════════════════════════════ */
+        .page-content { flex: 1; padding: 24px; }
+
+        /* ═══════════════════════════════════════════════════════
+           CARDS
+        ═══════════════════════════════════════════════════════ */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            box-shadow: var(--card-shadow);
+            transition: background 0.25s, border-color 0.25s;
+        }
+
+        .card-soft {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            box-shadow: var(--card-shadow);
+        }
+
+        /* Stat card */
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            box-shadow: var(--card-shadow);
+            padding: 20px;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.25s;
+            cursor: default;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 28px rgba(0,0,0,0.1);
+        }
+
+        .stat-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+
+        .stat-value {
+            font-size: 1.85rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            line-height: 1.1;
+        }
+
+        .stat-label {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           HERO BANNER
+        ═══════════════════════════════════════════════════════ */
+        .hero-banner {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: #fff;
+            border-radius: 16px;
+            padding: 28px 32px;
+            margin-bottom: 24px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-banner::after {
+            content: '♻';
+            position: absolute;
+            right: 28px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 80px;
+            opacity: 0.07;
+            pointer-events: none;
+        }
+
+        .hero-banner h2 { font-weight: 700; margin: 0 0 6px; font-size: 1.3rem; }
+        .hero-banner p  { margin: 0; opacity: 0.78; font-size: 0.85rem; }
+
+        /* ═══════════════════════════════════════════════════════
+           TABLES
+        ═══════════════════════════════════════════════════════ */
+        .table {
+            color: var(--text-primary);
+            border-color: var(--table-border);
+            font-size: 0.83rem;
+        }
+
+        .table thead th {
+            background: var(--table-head-bg);
+            color: var(--primary);
+            font-weight: 700;
+            border: none;
+            white-space: nowrap;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .table td { vertical-align: middle; border-color: var(--table-border); }
+
+        /* ═══════════════════════════════════════════════════════
+           FORMS
+        ═══════════════════════════════════════════════════════ */
+        .form-control, .form-select {
+            background: var(--input-bg);
+            border-color: var(--input-border);
+            color: var(--text-primary);
+            border-radius: 9px;
+            font-size: 0.875rem;
+            transition: border-color 0.12s, box-shadow 0.12s, background 0.25s;
+        }
+
+        .form-control:focus, .form-select:focus {
+            background: var(--input-bg);
+            border-color: var(--accent);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 3px rgba(82,183,136,0.18);
+        }
+
+        .form-label { font-weight: 600; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 5px; }
+
+        /* ═══════════════════════════════════════════════════════
+           BUTTONS
+        ═══════════════════════════════════════════════════════ */
+        .btn { border-radius: 9px; font-weight: 600; font-size: 0.83rem; }
+        .btn-success { background: var(--primary); border-color: var(--primary); }
+        .btn-success:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+        .btn-outline-success { color: var(--primary); border-color: var(--primary); }
+        .btn-outline-success:hover { background: var(--primary); border-color: var(--primary); }
+
+        /* ═══════════════════════════════════════════════════════
+           BADGES
+        ═══════════════════════════════════════════════════════ */
+        .badge { border-radius: 6px; font-weight: 600; font-size: 0.72rem; }
+
+        .badge-eco {
+            background: var(--badge-eco-bg);
+            color: var(--badge-eco-text);
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 7px;
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           DROPDOWN (dark mode override)
+        ═══════════════════════════════════════════════════════ */
+        .dropdown-menu {
+            background: var(--dropdown-bg);
+            border-color: var(--dropdown-border);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+            border-radius: 12px;
+        }
+
+        .dropdown-item { color: var(--text-primary); font-size: 0.83rem; border-radius: 8px; margin: 1px 4px; }
+        .dropdown-item:hover { background: var(--btn-icon-bg); color: var(--text-primary); }
+        .dropdown-divider { border-color: var(--divider); }
+
+        /* ═══════════════════════════════════════════════════════
+           GRAMMAR BOX
+        ═══════════════════════════════════════════════════════ */
+        .grammar-box {
+            background: #0d1117;
+            color: #e6edf3;
+            border-radius: 12px;
+            padding: 16px;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            font-size: 0.8rem;
+            max-height: 380px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           TOAST MESSAGES
+        ═══════════════════════════════════════════════════════ */
+        .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
+
+        /* ═══════════════════════════════════════════════════════
+           SIDEBAR OVERLAY (MOBILE)
+        ═══════════════════════════════════════════════════════ */
+        .sb-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.46);
+            z-index: 1039;
+            backdrop-filter: blur(2px);
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           RESPONSIVE
+        ═══════════════════════════════════════════════════════ */
+        @media (max-width: 991px) {
+            .sidebar          { transform: translateX(-100%); }
+            .sidebar.sb-open  { transform: translateX(0); }
+            .sb-overlay.sb-open { display: block; }
+            .main-wrapper     { margin-left: 0; }
+            .topbar-hamburger { display: flex; }
+            .page-content     { padding: 16px; }
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           SECTION TITLE
+        ═══════════════════════════════════════════════════════ */
+        .section-title { font-weight: 700; color: var(--primary); }
+
+        /* Pill chip */
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 11px;
+            border-radius: 999px;
+            background: var(--badge-eco-bg);
+            color: var(--badge-eco-text);
+            font-size: 0.78rem;
+            font-weight: 500;
+            margin: 2px;
+        }
+
+        {% block extra_css %}{% endblock %}
+    </style>
+</head>
+<body>
+
+<!-- Overlay (mobile) -->
+<div class="sb-overlay" id="sb-overlay"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SIDEBAR
+═══════════════════════════════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+
+    <!-- Brand -->
+    <a href="{% url 'inicio' %}" class="sb-brand">
+        <div class="sb-brand-icon">♻</div>
+        <div>
+            <div class="sb-brand-name">EcoTrack</div>
+            <div class="sb-brand-sub">Residuos Sólidos</div>
+        </div>
+    </a>
+
+    <!-- Navigation -->
+    <nav class="sb-nav">
+
+        <div class="sb-section">Clasificación</div>
+        <a href="{% url 'inicio' %}" class="sb-link {% block nav_inicio %}{% endblock %}">
+            <i class="fa-solid fa-camera sb-icon"></i>
+            Detección IA
+        </a>
+        <a href="{% url 'admin_dashboard' %}" class="sb-link {% block nav_admin %}{% endblock %}">
+            <i class="fa-solid fa-gears sb-icon"></i>
+            Administración
+        </a>
+
+        <div class="sb-section">Análisis</div>
+        <a href="{% url 'reportes_dashboard' %}" class="sb-link {% block nav_reportes %}{% endblock %}">
+            <i class="fa-solid fa-chart-pie sb-icon"></i>
+            Reportes
+        </a>
+        <a href="{% url 'historial' %}" class="sb-link {% block nav_historial %}{% endblock %}">
+            <i class="fa-solid fa-clock-rotate-left sb-icon"></i>
+            Historial
+        </a>
+
+        <div class="sb-section">Gestión</div>
+        <a href="{% url 'rutas_lista' %}" class="sb-link {% block nav_recoleccion %}{% endblock %}">
+            <i class="fa-solid fa-truck sb-icon"></i>
+            Recolección
+        </a>
+        {% if user.is_authenticated %}
+            {% if user.rol == 'administrador' or user.is_superuser %}
+            <a href="{% url 'usuarios_lista' %}" class="sb-link {% block nav_usuarios %}{% endblock %}">
+                <i class="fa-solid fa-users sb-icon"></i>
+                Usuarios
+            </a>
+            {% endif %}
+        {% endif %}
+
+    </nav>
+
+    <!-- Footer: user info -->
+    <div class="sb-footer">
+        {% if user.is_authenticated %}
+        <a href="{% url 'perfil' %}" class="sb-user" style="display:flex; text-decoration:none;">
+            <div class="sb-avatar">
+                {{ user.first_name|first|upper|default:user.username|first|upper }}
+            </div>
+            <div style="flex:1; min-width:0;">
+                <div class="sb-user-name">{{ user.get_full_name|default:user.username }}</div>
+                <div class="sb-user-role">{{ user.get_rol_display }}</div>
+            </div>
+        </a>
+        {% endif %}
+    </div>
+
+</aside>
+
+<!-- ═══════════════════════════════════════════════════════
+     MAIN WRAPPER
+═══════════════════════════════════════════════════════ -->
+<div class="main-wrapper">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+
+        <button class="topbar-hamburger" id="sb-toggle" aria-label="Abrir menú">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+
+        <div class="topbar-info">
+            <div class="topbar-title">{% block page_title %}Dashboard{% endblock %}</div>
+            <div class="topbar-breadcrumb">
+                <a href="{% url 'inicio' %}">EcoTrack</a>
+                <i class="fa-solid fa-chevron-right" style="font-size:0.55rem; opacity:.5;"></i>
+                {% block breadcrumb_items %}{% endblock %}
+            </div>
+        </div>
+
+        <div class="topbar-actions">
+            <!-- Dark mode -->
+            <button class="icon-btn" id="theme-toggle" title="Cambiar tema">
+                <i class="fa-solid fa-moon" id="theme-icon"></i>
+            </button>
+
+            {% if user.is_authenticated %}
+            <!-- User dropdown -->
+            <div class="dropdown">
+                <a class="user-btn dropdown-toggle" href="#" role="button"
+                   data-bs-toggle="dropdown" aria-expanded="false"
+                   style="text-decoration:none; list-style:none;">
+                    <div class="user-btn-avatar">
+                        {{ user.first_name|first|upper|default:user.username|first|upper }}
+                    </div>
+                    <span class="user-btn-name d-none d-sm-block">
+                        {{ user.first_name|default:user.username }}
+                    </span>
+                    <i class="fa-solid fa-chevron-down" style="font-size:0.65rem; color:var(--text-muted);"></i>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end" style="min-width:210px;">
+                    <li class="px-3 py-2">
+                        <div style="font-weight:600; color:var(--text-primary); font-size:0.83rem;">
+                            {{ user.get_full_name|default:user.username }}
+                        </div>
+                        <div style="font-size:0.72rem; color:var(--text-muted);">{{ user.email }}</div>
+                    </li>
+                    <li><hr class="dropdown-divider my-1"></li>
+                    <li>
+                        <a class="dropdown-item" href="{% url 'perfil' %}">
+                            <i class="fa-solid fa-user me-2" style="width:14px; color:var(--accent);"></i>
+                            Mi perfil
+                        </a>
+                    </li>
+                    {% if user.rol == 'administrador' or user.is_superuser %}
+                    <li>
+                        <a class="dropdown-item" href="{% url 'usuarios_lista' %}">
+                            <i class="fa-solid fa-users-gear me-2" style="width:14px; color:var(--accent);"></i>
+                            Gestión de usuarios
+                        </a>
+                    </li>
+                    {% endif %}
+                    <li><hr class="dropdown-divider my-1"></li>
+                    <li>
+                        <form method="POST" action="{% url 'logout' %}" class="m-0">
+                            {% csrf_token %}
+                            <button type="submit" class="dropdown-item text-danger">
+                                <i class="fa-solid fa-right-from-bracket me-2" style="width:14px;"></i>
+                                Cerrar sesión
+                            </button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+
+            {% else %}
+            <a href="{% url 'login' %}" class="btn btn-success btn-sm">
+                <i class="fa-solid fa-right-to-bracket me-1"></i> Ingresar
+            </a>
+            {% endif %}
+        </div>
+    </header>
+
+    <!-- Messages (toasts) -->
+    {% if messages %}
+    <div class="toast-container">
+        {% for message in messages %}
+        <div class="toast align-items-center border-0 text-white show mb-2
+                    {% if message.tags == 'error' %}bg-danger
+                    {% elif message.tags == 'success' %}bg-success
+                    {% elif message.tags == 'warning' %}bg-warning text-dark
+                    {% else %}bg-info{% endif %}"
+             role="alert" data-bs-autohide="true" data-bs-delay="4500">
+            <div class="d-flex">
+                <div class="toast-body fw-semibold" style="font-size:0.83rem;">
+                    {{ message }}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto"
+                        data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Page content -->
+    <main class="page-content">
+        {% block content %}{% endblock %}
+    </main>
+
+</div><!-- /.main-wrapper -->
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // ─── Sidebar mobile ───────────────────────────────────────
+    const sidebar  = document.getElementById('sidebar');
+    const overlay  = document.getElementById('sb-overlay');
+    const sbToggle = document.getElementById('sb-toggle');
+
+    sbToggle?.addEventListener('click', () => {
+        sidebar.classList.toggle('sb-open');
+        overlay.classList.toggle('sb-open');
+    });
+    overlay?.addEventListener('click', () => {
+        sidebar.classList.remove('sb-open');
+        overlay.classList.remove('sb-open');
+    });
+
+    // ─── Dark mode ────────────────────────────────────────────
+    const themeBtn  = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const html      = document.documentElement;
+
+    const saved = localStorage.getItem('ecotrack-theme') || 'light';
+    html.setAttribute('data-theme', saved);
+    if (saved === 'dark') themeIcon?.classList.replace('fa-moon','fa-sun');
+
+    themeBtn?.addEventListener('click', () => {
+        const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('ecotrack-theme', next);
+        themeIcon?.classList.replace(next === 'dark' ? 'fa-moon' : 'fa-sun',
+                                     next === 'dark' ? 'fa-sun'  : 'fa-moon');
+    });
+
+    // ─── Auto-show toasts ─────────────────────────────────────
+    document.querySelectorAll('.toast').forEach(el => new bootstrap.Toast(el).show());
+</script>
+
+{% block extra_js %}{% endblock %}
+
+</body>
+</html>

@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Residuo #{{ residuo.id }}{% endblock %}
+{% block nav_admin %}active{% endblock %}
+{% block page_title %}Detalle – Residuo #{{ residuo.id }}{% endblock %}
+{% block breadcrumb_items %}
+    <a href="{% url 'admin_dashboard' %}" style="color:var(--accent);">Administración</a>
+    <i class="fa-solid fa-chevron-right" style="font-size:.55rem;opacity:.5;"></i>
+    Residuo #{{ residuo.id }}
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="hero-banner mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <h2><i class="fa-solid fa-microscope me-2"></i>Detalle – Residuo #{{ residuo.id }}</h2>
+            <p>Resultado completo del análisis del Grammar Engine</p>
+        </div>
+        <a href="{% url 'admin_dashboard' %}" class="btn btn-light fw-semibold">
+            <i class="fa-solid fa-arrow-left me-2"></i>Volver al dashboard
+        </a>
+    </div>
+</div>
+
+<div class="row g-4">
+
+    <!-- Información general -->
+    <div class="col-md-4">
+        <div class="card p-4 h-100">
+            <h6 class="section-title mb-3">
+                <i class="fa-solid fa-info-circle me-2"></i>Información del residuo
+            </h6>
+            {% if residuo.imagen %}
+            <img src="{{ residuo.imagen.url }}" class="img-fluid rounded mb-3"
+                 style="max-height:200px; object-fit:cover; border:1px solid var(--card-border);">
+            {% endif %}
+            <table class="table table-sm">
+                <tr>
+                    <th style="color:var(--text-secondary);font-weight:600;width:40%;">ID</th>
+                    <td>#{{ residuo.id }}</td>
+                </tr>
+                <tr>
+                    <th style="color:var(--text-secondary);font-weight:600;">Fecha</th>
+                    <td>{{ residuo.fecha|date:"d/m/Y H:i" }}</td>
+                </tr>
+                <tr>
+                    <th style="color:var(--text-secondary);font-weight:600;">Objeto</th>
+                    <td>{{ residuo.tipo|default:"–" }}</td>
+                </tr>
+                <tr>
+                    <th style="color:var(--text-secondary);font-weight:600;">Categoría</th>
+                    <td>{{ residuo.categoria|default:"–" }}</td>
+                </tr>
+                <tr>
+                    <th style="color:var(--text-secondary);font-weight:600;">Confianza</th>
+                    <td>{{ residuo.confianza|floatformat:2 }}</td>
+                </tr>
+            </table>
+
+            {% if residuo.resultado_json.objetos %}
+            <h6 class="section-title mb-2" style="font-size:.8rem;">Objetos detectados</h6>
+            <ul class="list-group list-group-flush">
+                {% for nombre, cantidad in residuo.resultado_json.objetos.items %}
+                <li class="list-group-item d-flex justify-content-between px-0"
+                    style="background:transparent;border-color:var(--divider);font-size:.82rem;">
+                    <span>{{ nombre }}</span>
+                    <span class="badge-eco">{{ cantidad }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Resultado Grammar Engine -->
+    <div class="col-md-8">
+        {% if admin %}
+
+        <!-- Resumen clasificación -->
+        <div class="card p-4 mb-4">
+            <h6 class="section-title mb-3">
+                <i class="fa-solid fa-gears me-2"></i>Clasificación Grammar Engine
+            </h6>
+            <div class="row g-3 mb-4">
+                <div class="col-sm-4 text-center">
+                    <span class="badge bg-{{ mat_color }}" style="font-size:.95rem; padding:8px 16px;">
+                        {{ admin.material_predominante }}
+                    </span>
+                    <div class="small text-muted mt-1">Material predominante</div>
+                </div>
+                <div class="col-sm-4 text-center">
+                    <span class="badge bg-{{ prio_color }}" style="font-size:.95rem; padding:8px 16px;">
+                        {{ admin.prioridad }}
+                    </span>
+                    <div class="small text-muted mt-1">Prioridad</div>
+                </div>
+                <div class="col-sm-4 text-center">
+                    <div class="fw-bold text-success" style="font-size:2rem; line-height:1;">
+                        {{ admin.nivel_prioridad }}
+                    </div>
+                    <div class="small text-muted mt-1">Nivel en cola</div>
+                </div>
+            </div>
+
+            {% if admin.materiales %}
+            <h6 class="fw-semibold mb-2" style="font-size:.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">
+                Materiales detectados
+            </h6>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                {% for mat, cnt in admin.materiales.items %}
+                <span class="badge bg-secondary" style="font-size:.82rem; padding:5px 10px;">
+                    {{ mat }}: {{ cnt }}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if admin.alertas %}
+            <h6 class="fw-semibold mb-2" style="font-size:.78rem;color:#f59e0b;text-transform:uppercase;letter-spacing:.5px;">
+                <i class="fa-solid fa-triangle-exclamation me-1"></i>Alertas
+            </h6>
+            {% for alerta in admin.alertas %}
+            <div class="alert alert-warning py-2 mb-2 rounded-3" style="font-size:.82rem;">
+                <i class="fa-solid fa-triangle-exclamation me-2"></i>{{ alerta }}
+            </div>
+            {% endfor %}
+            {% endif %}
+
+            <div class="text-muted" style="font-size:.75rem; margin-top:8px;">
+                <i class="fa-solid fa-clock me-1"></i>
+                Procesado: {{ admin.fecha_procesado|date:"d/m/Y H:i:s" }}
+            </div>
+        </div>
+
+        <!-- Output JSON del Grammar Engine -->
+        <div class="card p-4">
+            <h6 class="section-title mb-3">
+                <i class="fa-solid fa-code me-2"></i>Output Grammar Engine
+                <span class="badge bg-dark ms-1" style="font-size:.65rem;">JSON</span>
+            </h6>
+            <div class="grammar-box">{{ admin.resultado_grammar|pprint }}</div>
+        </div>
+
+        {% else %}
+
+        <div class="card p-4">
+            <div class="text-center py-4" style="color:var(--text-muted);">
+                <i class="fa-solid fa-hourglass-half fa-2x mb-3" style="opacity:.3;"></i>
+                <p class="mb-3">Este residuo no ha sido analizado aún.</p>
+                <a href="{% url 'admin_procesar' residuo.id %}" class="btn btn-success">
+                    <i class="fa-solid fa-bolt me-2"></i>Analizar ahora
+                </a>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}

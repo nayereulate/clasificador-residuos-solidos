@@ -1,0 +1,618 @@
+================================================================================
+  MÓDULO 2 — ADMINISTRACIÓN DE RESIDUOS
+  Guía completa para defensa académica
+  Proyecto: ClasificadorDeResiduos (EcoTrack)
+================================================================================
+
+
+════════════════════════════════════════════════════════════════════════════════
+¿QUÉ HACE ESTE MÓDULO?
+════════════════════════════════════════════════════════════════════════════════
+
+El Módulo 2 toma los resultados del Módulo 1 (detecciones YOLO guardadas como
+JSON en la base de datos) y los procesa para determinar:
+
+  - Qué MATERIAL predomina en la imagen
+  - Qué PRIORIDAD de recolección tiene
+  - Qué ALERTAS debe generar
+
+IMPORTANTE: No vuelve a ejecutar la IA. Solo trabaja sobre el JSON ya guardado
+por el Módulo 1 en el campo "resultado_json" del modelo Residuo.
+
+
+════════════════════════════════════════════════════════════════════════════════
+FLUJO DE DATOS (de principio a fin)
+════════════════════════════════════════════════════════════════════════════════
+
+  Residuo.resultado_json          (output del Módulo 1 / YOLO)
+           │
+           ▼
+    AdministracionService
+    .procesar_residuo()
+           │
+           ├─► MaterialClassifierFactory.create("grammar")
+           │              └─► GrammarMaterialClassifier
+           │                         └─► GrammarEngine.process()
+           │                                    ├─► Parser.parse()
+           │                                    ├─► Validator.validate()
+           │                                    └─► Interpreter.interpret()
+           │                                               └─► RuleEngine.apply()
+           │
+           ├─► Agregación de materiales (defaultdict)
+           ├─► Cálculo de prioridad por cantidad total
+           ├─► Generación de alertas automáticas
+           │
+           ▼
+    ResultadoAdministracion  (guardado en la base de datos SQLite)
+
+
+════════════════════════════════════════════════════════════════════════════════
+1. GRAMMAR ENGINE — EL CORAZÓN DEL MÓDULO
+════════════════════════════════════════════════════════════════════════════════
+
+Es un MOTOR DE REGLAS PERSONALIZADO ubicado en la carpeta grammar_engine/.
+Funciona como un mini-lenguaje de procesamiento con 5 componentes.
+NO es una librería externa — fue escrito desde cero para este proyecto.
+
+
+──────────────────────────────────────────────────────────
+COMPONENTE 1: Parser  (grammar_engine/parser.py)
+──────────────────────────────────────────────────────────
+
+CÓDIGO:
+  class Parser:
+      @staticmethod
+      def parse(data):
+          if isinstance(data, dict):
+              return data
+          raise TypeError("Formato no soportado por el parser.")
+
+QUÉ HACE:
+  Verifica que el dato de entrada sea un diccionario Python.
+  Es la puerta de entrada al motor — si el dato no tiene el formato correcto,
+  detiene el proceso antes de continuar.
+
+EJEMPLO:
+  Entrada:  {"objeto": "Lata", "cantidad": 3}
+  Salida:   {"objeto": "Lata", "cantidad": 3}  (pasa sin cambios)
+
+
+──────────────────────────────────────────────────────────
+COMPONENTE 2: Validator  (grammar_engine/validator.py)
+──────────────────────────────────────────────────────────
+
+CÓDIGO (simplificado):
+  class Validator:
+      @staticmethod
+      def validate(data: dict, grammar: dict) -> bool:
+          for field, rules in grammar.items():
+              if rules.get("required") and field not in data:
+                  raise ValidationError(f"Campo obligatorio faltante: {field}")
+              if "type" in rules and not isinstance(data[field], rules["type"]):
+                  raise ValidationError(f"Tipo incorrecto en '{field}'")
+              if "min" in rules and data[field] < rules["min"]:
+                  raise ValidationError(f"'{field}' debe ser >= {rules['min']}")
+          return True
+
+QUÉ HACE:
+  Compara los datos recibidos contra la "gramática" (un esquema de validación).
+  Valida: campos obligatorios, tipos de dato, valores mínimos y máximos.
+
+LA GRAMÁTICA DEL MÓDULO 2 (definida en administracion_service.py):
+  GRAMMAR_MODULO2 = {
+      "objeto":   { "required": True, "type": str },
+      "cantidad": { "required": True, "type": int, "min": 0 },
+  }
+
+  Esto significa: cada objeto debe tener un nombre (string) y una cantidad
+  (entero mayor o igual a 0).
+
+EJEMPLO:
+  Datos válidos:   {"objeto": "Lata", "cantidad": 3}  → OK
+  Datos inválidos: {"objeto": "Lata", "cantidad": -1} → ValidationError
+
+
+──────────────────────────────────────────────────────────
+COMPONENTE 3: RuleEngine  (grammar_engine/rules.py)
+──────────────────────────────────────────────────────────
+
+CÓDIGO:
+  class RuleEngine:
+      @staticmethod
+      def match_condition(data, condition):
+          for key, expected_value in condition.items():
+              if data[key] != expected_value:
+                  return False
+          return True
+
+      @staticmethod
+      def apply(data, rules):
+          result = data.copy()
+          for rule in rules:
+              condition = rule.get("if", {})
+              action    = rule.get("then", {})
+              if RuleEngine.match_condition(result, condition):
+                  result.update(action)
+          return result
+
+QUÉ HACE:
+  Itera sobre las 111 reglas del tipo IF → THEN.
+  Si la condición coincide con los datos, aplica la acción (agrega campos).
+
+EJEMPLO DE REGLAS (definidas en MATERIAL_RULES en administracion_service.py):
+  {"if": {"objeto": "Lata"},                    "then": {"material": "Metal",    "prioridad_base": 1}}
+  {"if": {"objeto": "Botella plástica"},         "then": {"material": "Plástico", "prioridad_base": 3}}
+  {"if": {"objeto": "Botella de vidrio"},        "then": {"material": "Vidrio",   "prioridad_base": 2}}
+  {"if": {"objeto": "Cartón corrugado"},         "then": {"material": "Papel/Cartón", "prioridad_base": 4}}
+  {"if": {"objeto": "Desecho orgánico"},         "then": {"material": "Orgánico", "prioridad_base": 5}}
+
+CÓMO FUNCIONA:
+  Entrada:  {"objeto": "Lata", "cantidad": 3}
+  Regla 1 coincide: "objeto" == "Lata" → True
+  Resultado: {"objeto": "Lata", "cantidad": 3, "material": "Metal", "prioridad_base": 1}
+
+
+──────────────────────────────────────────────────────────
+COMPONENTE 4: Interpreter  (grammar_engine/interpreter.py)
+──────────────────────────────────────────────────────────
+
+CÓDIGO:
+  class Interpreter:
+      @staticmethod
+      def interpret(data, rules):
+          return RuleEngine.apply(data, rules)
+
+QUÉ HACE:
+  Delega la interpretación al RuleEngine.
+  Es una capa de abstracción: si en el futuro se cambia la lógica de
+  interpretación, se modifica aquí sin afectar el resto del sistema.
+
+
+──────────────────────────────────────────────────────────
+COMPONENTE 5: GrammarEngine  (grammar_engine/engine.py)
+──────────────────────────────────────────────────────────
+
+CÓDIGO:
+  class GrammarEngine:
+      def process(self, data, grammar, rules):
+          parsed = Parser.parse(data)                       # Paso 1: Parsear
+          Validator.validate(parsed, grammar)               # Paso 2: Validar
+          result = Interpreter.interpret(parsed, rules)     # Paso 3: Interpretar
+          return result
+
+QUÉ HACE:
+  Es el ORQUESTADOR de los 3 pasos: parsear → validar → interpretar.
+  Es el único método que llama el clasificador desde afuera.
+
+  El método "process()" implementa el patrón PIPELINE:
+  cada paso transforma los datos y los pasa al siguiente.
+
+
+════════════════════════════════════════════════════════════════════════════════
+2. PATRÓN FACTORY — MaterialClassifierFactory
+════════════════════════════════════════════════════════════════════════════════
+
+CÓDIGO (en administracion_service.py):
+  class MaterialClassifierFactory:
+      _registry = {
+          "grammar": GrammarMaterialClassifier,
+          "default": DefaultMaterialClassifier,
+      }
+
+      @staticmethod
+      def create(classifier_type: str = "grammar") -> MaterialClassifier:
+          cls = MaterialClassifierFactory._registry.get(classifier_type)
+          if cls is None:
+              raise ValueError(f"Clasificador desconocido: {classifier_type!r}")
+          return cls()
+
+QUÉ ES EL PATRÓN FACTORY:
+  En lugar de escribir:
+    if tipo == "grammar":
+        return GrammarMaterialClassifier()
+    elif tipo == "default":
+        return DefaultMaterialClassifier()
+
+  El Factory consulta un diccionario (_registry) y devuelve la instancia.
+  Esto respeta el principio Open/Closed: se puede agregar un nuevo clasificador
+  (por ejemplo "MLClassifier") sin modificar el código existente, solo se
+  agrega una entrada al diccionario.
+
+DOS IMPLEMENTACIONES DISPONIBLES:
+  - GrammarMaterialClassifier: usa Grammar Engine con 111 reglas (el principal)
+  - DefaultMaterialClassifier: respaldo de emergencia, devuelve "Otro" siempre
+
+INTERFAZ ABSTRACTA:
+  class MaterialClassifier(ABC):
+      @abstractmethod
+      def classify(self, objeto: str, cantidad: int) -> dict:
+          pass
+
+  Ambas clases implementan el mismo método classify(), lo que garantiza que
+  el código que las usa no necesita saber cuál está usando (polimorfismo).
+
+
+════════════════════════════════════════════════════════════════════════════════
+3. AdministracionService.procesar_residuo() — EL ORQUESTADOR PRINCIPAL
+════════════════════════════════════════════════════════════════════════════════
+
+CÓDIGO SIMPLIFICADO (en administracion_service.py):
+
+  def procesar_residuo(self, residuo) -> dict:
+      objetos = residuo.resultado_json.get("objetos", {})
+      # Ejemplo: {"Lata": 3, "Botella plástica": 5, "Cartón corrugado": 2}
+      total   = residuo.resultado_json.get("total", 0)
+
+      classifier = MaterialClassifierFactory.create("grammar")  # Factory
+      materiales = defaultdict(int)
+
+      for objeto, cantidad in objetos.items():
+          result   = classifier.classify(objeto, int(cantidad)) # Grammar Engine
+          material = result.get("material", "Otro")
+          materiales[material] += int(cantidad)  # acumula por material
+
+      material_predominante = max(materiales, key=materiales.get)
+
+      # Prioridad por cantidad total
+      PRIORIDAD_POR_CANTIDAD = [(20, "Alta"), (10, "Media"), (0, "Baja")]
+      prioridad_nombre = "Baja"
+      for umbral, nombre in PRIORIDAD_POR_CANTIDAD:
+          if total > umbral:
+              prioridad_nombre = nombre
+              break
+
+      # Alertas automáticas
+      alertas = []
+      if total > 20:
+          alertas.append(f"Alta cantidad detectada: {total} objetos")
+      for mat, count in materiales.items():
+          if mat == "Metal"    and count >= 5: alertas.append("Metal reciclable...")
+          if mat == "Vidrio"   and count >= 3: alertas.append("Vidrio frágil...")
+          if mat == "Orgánico" and count > 0:  alertas.append("Residuo orgánico...")
+
+
+EJEMPLO PASO A PASO:
+
+  Supón que YOLO detectó:
+    objetos = {"Lata": 3, "Botella plástica transparente": 5, "Cartón corrugado": 2}
+    total   = 10
+
+  Iteración 1: objeto="Lata", cantidad=3
+    Grammar Engine → material="Metal", prioridad_base=1
+    materiales = {"Metal": 3}
+
+  Iteración 2: objeto="Botella plástica transparente", cantidad=5
+    Grammar Engine → material="Plástico", prioridad_base=3
+    materiales = {"Metal": 3, "Plástico": 5}
+
+  Iteración 3: objeto="Cartón corrugado", cantidad=2
+    Grammar Engine → material="Papel/Cartón", prioridad_base=4
+    materiales = {"Metal": 3, "Plástico": 5, "Papel/Cartón": 2}
+
+  material_predominante = "Plástico"  (el que tiene más unidades: 5)
+
+  Prioridad: total=10, 10 > 10 es False, 10 > 0 es True → "Baja"
+
+  Alertas: Metal tiene 3 (necesita ≥5, no genera alerta)
+           Plástico, Papel/Cartón: no tienen umbral de alerta
+  alertas = []
+
+  Resultado final guardado en BD:
+    material_predominante = "Plástico"
+    materiales            = {"Metal": 3, "Plástico": 5, "Papel/Cartón": 2}
+    prioridad             = "Baja"
+    nivel_prioridad       = 3  (Plástico=3 según MATERIAL_PRIORITY_LEVEL)
+    alertas               = []
+
+
+════════════════════════════════════════════════════════════════════════════════
+4. COLA DE PRIORIDAD — construir_cola_prioridad()
+════════════════════════════════════════════════════════════════════════════════
+
+CÓDIGO (en administracion_service.py):
+
+  def construir_cola_prioridad(self, pares_residuo_admin: list) -> list:
+      pq = queue.PriorityQueue()
+      for residuo, admin in pares_residuo_admin:
+          nivel = admin.nivel_prioridad   # 1=Metal, 2=Vidrio, 3=Plástico...
+          pq.put((nivel, residuo.id, residuo, admin))  # tupla ordenable
+
+      resultado = []
+      while not pq.empty():
+          nivel, rid, residuo, admin = pq.get()  # saca el de MENOR nivel primero
+          resultado.append({...})
+      return resultado
+
+QUÉ ES queue.PriorityQueue:
+  Es una cola con HEAP implementada en la librería estándar de Python.
+  Siempre devuelve el elemento con el MENOR valor primero.
+  En este caso, nivel=1 (Metal) sale primero porque tiene mayor urgencia.
+
+ESCALA DE PRIORIDADES:
+  Metal=1 → Vidrio=2 → Plástico/Espuma=3 → Papel/Cartón=4 → Orgánico=5 → Otro=6
+
+  El número más bajo = más urgente de recolectar.
+  El Metal tiene prioridad 1 porque su reciclaje tiene alto valor económico.
+  El Orgánico tiene prioridad 5 porque se descompone y necesita manejo especial.
+
+POR QUÉ SE USA (nivel, residuo.id, ...):
+  La tupla tiene tres elementos para desempatar. Si dos residuos tienen el
+  mismo nivel (ambos Metal=1), Python compara el segundo elemento (residuo.id)
+  para que el orden sea determinístico (siempre el mismo resultado).
+
+
+════════════════════════════════════════════════════════════════════════════════
+5. PATRÓN STRATEGY — ExportContext
+════════════════════════════════════════════════════════════════════════════════
+
+CÓDIGO (en administracion_service.py):
+
+  class ExportStrategy(ABC):          # Interfaz abstracta
+      @abstractmethod
+      def export(self, data: dict) -> str:
+          pass
+
+  class JsonExportStrategy(ExportStrategy):
+      def export(self, data: dict) -> str:
+          return json.dumps(data, indent=4, ensure_ascii=False)
+
+  class XmlExportStrategy(ExportStrategy):
+      def export(self, data: dict) -> str:
+          # construye árbol XML con ElementTree
+          root = ET.Element("administracion_residuos")
+          ...
+          return ET.tostring(root, encoding="unicode", xml_declaration=True)
+
+  class TxtExportStrategy(ExportStrategy):
+      def export(self, data: dict) -> str:
+          lines = ["=" * 60, "  INFORME DE ADMINISTRACIÓN DE RESIDUOS", "=" * 60]
+          ...
+          return "\n".join(lines)
+
+  class ExportContext:                 # Contexto que usa la estrategia
+      _strategies = {
+          "json": JsonExportStrategy,
+          "xml":  XmlExportStrategy,
+          "txt":  TxtExportStrategy,
+      }
+
+      def __init__(self, formato: str = "json"):
+          cls = self._strategies.get(formato, JsonExportStrategy)
+          self._strategy = cls()
+
+      def export(self, data: dict) -> str:
+          return self._strategy.export(data)   # delega sin saber cuál es
+
+QUÉ ES EL PATRÓN STRATEGY:
+  Define una familia de algoritmos (JSON, XML, TXT), encapsula cada uno en
+  una clase separada y los hace intercambiables.
+  El código que llama a exportar() no necesita saber qué formato se usa.
+
+CÓMO SE USA EN LA VISTA:
+  def admin_exportar(request, formato):    # formato = "json" / "xml" / "txt"
+      data = {...todos los registros...}
+      contenido = _service.exportar(formato, data)   # Strategy elige cuál usar
+      return HttpResponse(contenido, content_type=...)
+
+VENTAJA:
+  Agregar un nuevo formato (CSV, Excel) solo requiere crear una nueva clase
+  que extienda ExportStrategy y agregarla al diccionario _strategies.
+  No se modifica ningún código existente.
+
+
+════════════════════════════════════════════════════════════════════════════════
+6. PROCESAMIENTO EN HILO — threading
+════════════════════════════════════════════════════════════════════════════════
+
+CÓDIGO (en administracion_service.py):
+
+  _lock   = threading.Lock()
+  _estado = {"running": False, "total": 0, "done": 0, "errores": 0}
+
+  def _worker_procesar(ids_residuos: list):
+      global _estado
+      with _lock:
+          _estado = {"running": True, "total": len(ids_residuos), "done": 0, "errores": 0}
+
+      try:
+          for rid in ids_residuos:
+              residuo   = Residuo.objects.get(pk=rid)
+              resultado = service.procesar_residuo(residuo)
+              ResultadoAdministracion.objects.update_or_create(...)
+              with _lock:
+                  _estado["done"] += 1
+      finally:
+          with _lock:
+              _estado["running"] = False
+
+  def iniciar_hilo_procesamiento(ids: list) -> threading.Thread:
+      t = threading.Thread(target=_worker_procesar, args=(ids,), daemon=True)
+      t.start()
+      return t
+
+CONCEPTOS CLAVE:
+
+  threading.Thread:
+    Permite ejecutar código en PARALELO al hilo principal del servidor.
+    El usuario hace clic en "Procesar todos" y el servidor responde
+    INMEDIATAMENTE mientras el procesamiento ocurre en segundo plano.
+
+  threading.Lock():
+    Mecanismo de exclusión mutua. Garantiza que solo UN hilo a la vez
+    puede leer/escribir _estado. Previene "condiciones de carrera".
+    with _lock: asegura que el Lock se libere siempre, incluso si hay error.
+
+  daemon=True:
+    Si el servidor Django se detiene, el hilo también muere automáticamente.
+    Sin esto, el proceso quedaría corriendo aunque el servidor se cierre.
+
+  Polling AJAX:
+    La vista admin_estado() responde con el JSON de _estado.
+    El JavaScript hace fetch() cada 1.2 segundos para mostrar el progreso.
+    Cuando running=False, recarga la página para mostrar los resultados.
+
+
+════════════════════════════════════════════════════════════════════════════════
+7. MODELOS DE BASE DE DATOS
+════════════════════════════════════════════════════════════════════════════════
+
+CÓDIGO (en apps/clasificacion/models.py):
+
+  class Residuo(models.Model):
+      imagen       = models.ImageField(upload_to="residuos/")
+      tipo         = models.CharField(max_length=100)    # "Lata", "Botella..."
+      categoria    = models.CharField(max_length=100)    # material predominante
+      confianza    = models.FloatField(default=0)        # confianza YOLO (0-1)
+      resultado_json = models.JSONField(default=dict)    # OUTPUT completo de YOLO
+      fecha        = models.DateTimeField(auto_now_add=True)
+
+  class ResultadoAdministracion(models.Model):
+      residuo = models.OneToOneField('Residuo', on_delete=models.CASCADE,
+                                     related_name='administracion')
+      material_predominante = models.CharField(max_length=100)
+      materiales            = models.JSONField(default=dict)
+      prioridad             = models.CharField(max_length=50)
+      nivel_prioridad       = models.IntegerField(default=6)
+      alertas               = models.JSONField(default=list)
+      resultado_grammar     = models.JSONField(default=dict)
+      fecha_procesado       = models.DateTimeField(auto_now_add=True)
+
+DETALLES IMPORTANTES:
+
+  OneToOneField:
+    Garantiza que cada Residuo tiene EXACTAMENTE UN ResultadoAdministracion.
+    Es una relación 1:1 en la base de datos (enforced a nivel de BD).
+    Se accede desde código como: residuo.administracion
+
+  JSONField:
+    Almacena diccionarios/listas Python directamente en SQLite como JSON.
+    "materiales" guarda: {"Metal": 3, "Plástico": 5, "Papel/Cartón": 2}
+    "alertas" guarda: ["Alta cantidad detectada: 25 objetos", "Metal reciclable..."]
+    "resultado_grammar" guarda el output completo del Grammar Engine para auditoria.
+
+  update_or_create():
+    Usado en las vistas al guardar resultados.
+    Si ya existe un ResultadoAdministracion para ese Residuo → lo ACTUALIZA.
+    Si no existe → lo CREA.
+    Permite reprocesar residuos sin generar duplicados.
+
+
+════════════════════════════════════════════════════════════════════════════════
+8. VISTAS DEL MÓDULO 2  (apps/clasificacion/views_admin.py)
+════════════════════════════════════════════════════════════════════════════════
+
+  admin_dashboard(request):
+    - Lee todos los Residuos con sus ResultadoAdministracion
+    - Aplica filtros (material, prioridad) recibidos por GET
+    - Llama a construir_cola_prioridad() para el panel lateral
+    - Calcula estadísticas generales
+    - Renderiza administracion.html
+
+  admin_procesar(request, pk):
+    - Obtiene el Residuo por ID
+    - Llama a AdministracionService.procesar_residuo()
+    - Guarda con update_or_create()
+    - Registra en el Historial
+    - Redirige al dashboard
+
+  admin_procesar_todos(request):
+    - Obtiene IDs de todos los residuos SIN ResultadoAdministracion
+    - Llama a iniciar_hilo_procesamiento(ids) → hilo de fondo
+    - Redirige al dashboard INMEDIATAMENTE (no espera)
+
+  admin_estado(request):
+    - Devuelve JSON con el estado actual del hilo: {running, total, done, errores}
+    - El JavaScript hace polling a esta URL cada 1.2 segundos
+
+  admin_detalle(request, pk):
+    - Muestra el resultado completo del Grammar Engine para un residuo
+    - Incluye clasificaciones, materiales, alertas y el JSON raw
+
+  admin_exportar(request, formato):
+    - Construye el diccionario con todos los datos
+    - Usa ExportContext(formato).export(data) → Strategy Pattern
+    - Devuelve el archivo como descarga (Content-Disposition: attachment)
+
+
+════════════════════════════════════════════════════════════════════════════════
+TABLA RESUMEN — PATRONES Y CONCEPTOS
+════════════════════════════════════════════════════════════════════════════════
+
+  Componente                  │ Patrón/Concepto                │ Archivo
+  ────────────────────────────┼────────────────────────────────┼───────────────────────────
+  GrammarEngine.process()     │ Pipeline (3 etapas)            │ grammar_engine/engine.py
+  Parser                      │ Validación de entrada          │ grammar_engine/parser.py
+  Validator                   │ Validación declarativa/esquema │ grammar_engine/validator.py
+  RuleEngine                  │ Sistema IF→THEN (111 reglas)   │ grammar_engine/rules.py
+  Interpreter                 │ Capa de abstracción            │ grammar_engine/interpreter.py
+  Transformer                 │ Conversión JSON/XML            │ grammar_engine/transformer.py
+  MaterialClassifierFactory   │ Patrón FACTORY                 │ administracion_service.py
+  MaterialClassifier (ABC)    │ Interfaz / Polimorfismo        │ administracion_service.py
+  ExportContext + Strategies  │ Patrón STRATEGY                │ administracion_service.py
+  PriorityQueue               │ Cola de prioridad (heap)       │ administracion_service.py
+  threading.Thread + Lock     │ Concurrencia / Mutex           │ administracion_service.py
+  ResultadoAdministracion     │ Modelo Django (OneToOne)       │ models.py
+  admin_estado() + JS polling │ Patrón Observer (AJAX)         │ views_admin.py + template
+
+
+════════════════════════════════════════════════════════════════════════════════
+PREGUNTAS DIFÍCILES Y RESPUESTAS
+════════════════════════════════════════════════════════════════════════════════
+
+P: ¿Por qué usar Grammar Engine si podrías hacer un if/else directo?
+
+R: El Grammar Engine SEPARA las reglas del código. Las 111 reglas están en
+   MATERIAL_RULES como datos (lista de dicts), no embebidas en lógica if/else.
+   Esto significa que puedes agregar una regla nueva sin modificar el código
+   Python: solo agregas un dict a la lista. Además, el Validator garantiza que
+   los datos entren con el formato correcto antes de aplicar las reglas,
+   evitando errores silenciosos. Es mantenible y extensible.
+
+
+P: ¿Por qué Factory y no simplemente instanciar la clase directamente?
+
+R: El Factory desacopla la creación del objeto de su uso. Si mañana se necesita
+   un clasificador diferente (basado en ML, en reglas de otra empresa, etc.),
+   se agrega al _registry sin cambiar el código que llama al clasificador.
+   Principio Open/Closed: abierto para extensión, cerrado para modificación.
+
+
+P: ¿Por qué Strategy para la exportación?
+
+R: Porque los tres formatos (JSON, XML, TXT) tienen el mismo "contrato": reciben
+   un dict y devuelven un string. Strategy permite intercambiarlos sin que el
+   código que los usa (la vista) sepa cuál se está usando. Agregar CSV solo
+   requiere una clase nueva, sin tocar nada existente.
+
+
+P: ¿Por qué threading.Lock() en el estado del hilo?
+
+R: En Python, múltiples hilos pueden leer/escribir variables compartidas al
+   mismo tiempo. Sin Lock, podría pasar que dos operaciones modifiquen _estado
+   simultáneamente y queden datos inconsistentes (ej: "done" se incrementa dos
+   veces perdiendo un conteo). El Lock garantiza acceso exclusivo: solo un hilo
+   a la vez puede leer o escribir _estado.
+
+
+P: ¿Qué pasa si el Grammar Engine no encuentra una regla para un objeto?
+
+R: En GrammarMaterialClassifier.classify(), después de llamar a
+   engine.process(), se verifica si "material" está en el resultado. Si no
+   está (ninguna regla coincidió), se asigna por defecto: material="Otro" y
+   prioridad_base=6. Esto garantiza que el sistema nunca falla, aunque el
+   objeto sea desconocido.
+
+
+P: ¿Qué significa OneToOneField vs ForeignKey?
+
+R: ForeignKey (1:N) = un Residuo podría tener MUCHOS ResultadoAdministracion.
+   OneToOneField (1:1) = un Residuo tiene EXACTAMENTE UN ResultadoAdministracion.
+   Se usa OneToOneField porque tiene sentido de negocio: un residuo solo puede
+   tener un resultado de clasificación activo a la vez. La BD enforcea esto
+   con una restricción UNIQUE sobre la columna residuo_id.
+
+
+================================================================================
+  Archivo generado para defensa académica del proyecto EcoTrack
+  Módulo 2 — Administración de Residuos
+================================================================================

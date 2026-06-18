@@ -1,0 +1,703 @@
+{% extends "base.html" %}
+{% block title %}Detección IA{% endblock %}
+{% block nav_inicio %}active{% endblock %}
+{% block page_title %}Detección IA{% endblock %}
+{% block breadcrumb_items %}Detección IA{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ── Imagen del último análisis ── */
+    .img-compare {
+        width: 100%;
+        height: 230px;
+        background: #111827;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--card-border);
+        /* CSS Grid: apila ambas imágenes en la misma celda */
+        display: grid;
+        place-items: center;
+    }
+    .img-compare img {
+        grid-area: 1 / 1;      /* todas las imgs al mismo slot */
+        max-width: 100%;
+        max-height: 230px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        display: block;
+        transition: opacity .15s ease;
+    }
+
+    /* ── Cámara (también fija) ── */
+    .camera-stage {
+        position: relative;
+        width: 100%;
+        height: 340px;
+        background: #000;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--card-border);
+    }
+    #video-camara, #overlay-canvas {
+        position: absolute; inset: 0;
+        width: 100%; height: 100%;
+        object-fit: contain;
+    }
+    #overlay-canvas { pointer-events: none; }
+
+    /* ── Miniaturas del historial ── */
+    .img-box {
+        background: var(--body-bg);
+        border-radius: 10px;
+        border: 1px solid var(--card-border);
+        overflow: hidden;
+        height: 130px;          /* altura fija para miniaturas */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .img-box img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;     /* rellena el recuadro sin deformar */
+        display: block;
+    }
+
+    /* ── Preview antes de subir ── */
+    .preview-drop {
+        border: 2px dashed var(--card-border);
+        border-radius: 12px;
+        padding: 14px;
+        background: var(--body-bg);
+        max-height: 180px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .preview-drop img {
+        max-height: 150px;
+        width: auto;
+        border-radius: 8px;
+        object-fit: contain;
+    }
+
+    /* ── Live indicator ── */
+    .live-dot {
+        width: 9px; height: 9px; border-radius: 50%;
+        background: #22c55e; animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+        0%   { box-shadow: 0 0 0 0 rgba(34,197,94,.6); }
+        70%  { box-shadow: 0 0 0 12px rgba(34,197,94,0); }
+        100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="hero-banner mb-4">
+    <h2><i class="fa-solid fa-camera me-2"></i>Detección de Residuos con IA</h2>
+    <p>Sube una imagen o usa la cámara en vivo. YOLOv8 detectará y clasificará residuos automáticamente.</p>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-pills mb-4 gap-1" id="tabs-det" role="tablist">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-img" type="button">
+            <i class="fa-solid fa-image me-1"></i> Imagen
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-cam" type="button">
+            <i class="fa-solid fa-video me-1"></i> Cámara en vivo
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content">
+
+    <!-- ════════════════════════════════════════════════
+         TAB IMAGEN
+    ════════════════════════════════════════════════ -->
+    <div class="tab-pane fade show active" id="tab-img" role="tabpanel">
+        <div class="row g-4 mb-4">
+            <!-- Formulario -->
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body p-4">
+                        <h5 class="section-title mb-3"><i class="fa-solid fa-upload me-2"></i>Subir imagen</h5>
+                        <form method="POST" enctype="multipart/form-data" id="form-img">
+                            {% csrf_token %}
+                            <div class="mb-3">
+                                <label class="form-label">{{ form.imagen.label }}</label>
+                                {{ form.imagen }}
+                                {% if form.imagen.errors %}
+                                <div class="text-danger mt-1" style="font-size:.78rem;">{{ form.imagen.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="preview-drop mb-3" style="flex-direction:column;">
+                                <p class="text-muted mb-1" style="font-size:.75rem;align-self:flex-start;">
+                                    Vista previa
+                                </p>
+                                <img id="preview-img" class="d-none" alt="Preview"
+                                     style="max-height:140px;max-width:100%;
+                                            object-fit:contain;border-radius:8px;">
+                                <div id="preview-ph" style="color:var(--text-muted);font-size:.82rem;
+                                                             text-align:center;">
+                                    <i class="fa-solid fa-image me-1"></i> Selecciona una imagen…
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-success w-100 fw-semibold">
+                                <i class="fa-solid fa-magnifying-glass me-2"></i>ANALIZAR
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Resultado último análisis -->
+            <div class="col-lg-8">
+                <div class="card h-100">
+                    <div class="card-body p-4 d-flex flex-column">
+
+                        <!-- Título siempre visible arriba -->
+                        <h5 class="section-title mb-3" style="flex-shrink:0;">
+                            <i class="fa-solid fa-chart-bar me-2"></i>Último análisis
+                        </h5>
+
+                        {% if ultimo_residuo %}
+
+                        <!-- IMÁGENES: original + procesada lado a lado, altura fija -->
+                        <div class="row g-2 mb-3" style="flex-shrink:0;">
+                            <div class="col-6">
+                                <div class="text-muted mb-1"
+                                     style="font-size:.68rem;font-weight:700;
+                                            text-transform:uppercase;letter-spacing:.5px;">
+                                    Original
+                                </div>
+                                <div style="height:200px; background:#111827; border-radius:10px;
+                                            overflow:hidden; display:flex; align-items:center;
+                                            justify-content:center; border:1px solid var(--card-border);">
+                                    <img src="{{ ultimo_residuo.imagen.url }}"
+                                         alt="Original"
+                                         style="max-width:100%; max-height:200px;
+                                                width:auto; height:auto; object-fit:contain;
+                                                display:block;">
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="text-muted mb-1"
+                                     style="font-size:.68rem;font-weight:700;
+                                            text-transform:uppercase;letter-spacing:.5px;">
+                                    Con detecciones
+                                </div>
+                                <div style="height:200px; background:#111827; border-radius:10px;
+                                            overflow:hidden; display:flex; align-items:center;
+                                            justify-content:center; border:1px solid var(--card-border);">
+                                    {% if ultimo_residuo.resultado_json.imagen_procesada %}
+                                    <img src="{{ ultimo_residuo.resultado_json.imagen_procesada }}"
+                                         alt="Procesada"
+                                         style="max-width:100%; max-height:200px;
+                                                width:auto; height:auto; object-fit:contain;
+                                                display:block;">
+                                    {% else %}
+                                    <span style="color:rgba(255,255,255,.3);font-size:.8rem;">
+                                        Sin imagen procesada
+                                    </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- RESUMEN + DETECCIONES en fila -->
+                        <div class="row g-3" style="flex-shrink:0;">
+                            <div class="col-sm-6">
+                                <div class="text-muted mb-2"
+                                     style="font-size:.68rem;font-weight:700;
+                                            text-transform:uppercase;letter-spacing:.5px;">
+                                    Resumen
+                                </div>
+                                <div class="d-flex flex-wrap gap-1">
+                                    <span class="pill" style="font-size:.75rem;">
+                                        <i class="fa-solid fa-hashtag me-1"
+                                           style="font-size:.6rem;"></i>
+                                        Total: {{ ultimo_residuo.resultado_json.total|default:0 }}
+                                    </span>
+                                    <span class="pill" style="font-size:.75rem;">
+                                        {{ ultimo_residuo.tipo|default:"–"|truncatechars:20 }}
+                                    </span>
+                                    <span class="pill" style="font-size:.75rem;">
+                                        {{ ultimo_residuo.categoria|default:"–" }}
+                                    </span>
+                                    <span class="pill" style="font-size:.75rem;">
+                                        <i class="fa-solid fa-gauge me-1"
+                                           style="font-size:.6rem;"></i>
+                                        Conf: {{ ultimo_residuo.confianza|floatformat:2 }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="text-muted mb-2"
+                                     style="font-size:.68rem;font-weight:700;
+                                            text-transform:uppercase;letter-spacing:.5px;">
+                                    Objetos detectados
+                                </div>
+                                {% if ultimo_residuo.resultado_json.objetos %}
+                                <ul class="list-group list-group-flush">
+                                    {% for nombre, cantidad in ultimo_residuo.resultado_json.objetos.items %}
+                                    <li class="list-group-item d-flex justify-content-between px-0"
+                                        style="background:transparent;border-color:var(--divider);
+                                               font-size:.8rem;padding:4px 0;">
+                                        <span style="overflow:hidden;text-overflow:ellipsis;
+                                                     white-space:nowrap;max-width:78%;">
+                                            {{ nombre }}
+                                        </span>
+                                        <span class="badge-eco">{{ cantidad }}</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                                {% else %}
+                                <p class="text-muted small mb-0">Sin detecciones.</p>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% else %}
+                        <div class="text-center py-5 my-auto" style="color:var(--text-muted);">
+                            <i class="fa-solid fa-images fa-3x mb-3" style="opacity:.2;"></i>
+                            <p class="mb-0">Sube una imagen para ver el análisis aquí.</p>
+                        </div>
+                        {% endif %}
+
+                    </div><!-- /card-body -->
+                </div><!-- /card -->
+            </div><!-- /col-lg-8 -->
+
+        </div><!-- /row g-4 -->
+    </div><!-- /tab-pane -->
+
+    <!-- ════════════════════════════════════════════════
+         TAB CÁMARA
+    ════════════════════════════════════════════════ -->
+    <div class="tab-pane fade" id="tab-cam" role="tabpanel">
+        <div class="row g-4 mb-4">
+            <div class="col-lg-7">
+                <div class="card h-100">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                            <h5 class="section-title mb-0"><i class="fa-solid fa-video me-2"></i>Cámara en vivo</h5>
+                            <span class="d-flex align-items-center gap-2" style="font-size:.82rem;color:#22c55e;font-weight:600;">
+                                <span class="live-dot"></span>En directo
+                            </span>
+                        </div>
+                        <div class="camera-stage mb-3">
+                            <video id="video-camara" autoplay muted playsinline></video>
+                            <canvas id="overlay-canvas"></canvas>
+                        </div>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-success" id="btn-iniciar-camara">
+                                <i class="fa-solid fa-play me-1"></i>Iniciar
+                            </button>
+                            <button class="btn btn-danger" id="btn-detener-camara" disabled>
+                                <i class="fa-solid fa-stop me-1"></i>Detener
+                            </button>
+                            <button class="btn btn-outline-success" id="btn-guardar-analisis" disabled>
+                                <i class="fa-solid fa-floppy-disk me-1"></i>Guardar
+                            </button>
+                        </div>
+                        <canvas id="canvas-camara" class="d-none"></canvas>
+                        <p class="text-muted small mt-2 mb-0" id="camera-status">Cámara detenida.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="card h-100">
+                    <div class="card-body p-4">
+                        <h5 class="section-title mb-3">Resultado en vivo</h5>
+                        <div class="p-3 mb-3" style="background:var(--body-bg);border-radius:12px;font-size:.83rem;">
+                            <p class="mb-1"><strong>Objeto:</strong> <span id="cam-objeto">–</span></p>
+                            <p class="mb-1"><strong>Material:</strong> <span id="cam-material">–</span></p>
+                            <p class="mb-1"><strong>Total:</strong> <span id="cam-total">0</span></p>
+                            <p class="mb-0"><strong>Confianza:</strong> <span id="cam-confianza">0.00</span></p>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="p-2" style="background:var(--body-bg);border-radius:10px;">
+                                    <div class="fw-semibold mb-1" style="font-size:.78rem;">Detecciones</div>
+                                    <div id="cam-objetos"></div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="p-2" style="background:var(--body-bg);border-radius:10px;">
+                                    <div class="fw-semibold mb-1" style="font-size:.78rem;">Materiales</div>
+                                    <div id="cam-materiales"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <hr style="border-color:var(--divider);">
+                        <img id="cam-img-proc" class="img-fluid rounded border d-none" alt="Procesada">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ════════════════════════════════════════════════
+     HISTORIAL DE ANÁLISIS
+════════════════════════════════════════════════ -->
+<div class="card">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="section-title mb-0"><i class="fa-solid fa-clock-rotate-left me-2"></i>Historial de análisis</h5>
+            <span class="badge-eco">{{ residuos|length }} registros</span>
+        </div>
+
+        <div id="historial-container">
+            {% for residuo in residuos %}
+            <div class="card mb-3 border-0"
+                 style="box-shadow:var(--card-shadow);background:var(--card-bg);">
+                <div class="card-body p-3">
+
+                    <!-- Cabecera compacta -->
+                    <div class="d-flex justify-content-between align-items-center mb-2 gap-2 flex-wrap">
+                        <div class="d-flex align-items-center gap-2">
+                            <div style="width:8px;height:8px;border-radius:50%;
+                                        background:var(--accent);flex-shrink:0;"></div>
+                            <span class="fw-semibold" style="font-size:.85rem;">
+                                {{ residuo.tipo|default:"Sin detección"|truncatechars:30 }}
+                            </span>
+                            <span class="text-muted" style="font-size:.73rem;">
+                                {{ residuo.fecha|date:"d/m/Y H:i" }}
+                            </span>
+                        </div>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <span class="pill" style="font-size:.72rem;">{{ residuo.categoria|default:"–" }}</span>
+                            <span class="pill" style="font-size:.72rem;">
+                                <i class="fa-solid fa-gauge me-1" style="font-size:.6rem;"></i>
+                                {{ residuo.confianza|floatformat:2 }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Contenido en fila -->
+                    <div class="row g-2 align-items-start">
+
+                        <!-- Imagen original -->
+                        <div class="col-4 col-md-3">
+                            <div style="font-size:.7rem;color:var(--text-muted);
+                                        margin-bottom:4px;font-weight:600;">ORIGINAL</div>
+                            <div class="img-box">
+                                <img src="{{ residuo.imagen.url }}" alt="Original">
+                            </div>
+                        </div>
+
+                        <!-- Imagen procesada -->
+                        <div class="col-4 col-md-3">
+                            <div style="font-size:.7rem;color:var(--text-muted);
+                                        margin-bottom:4px;font-weight:600;">DETECTADA</div>
+                            <div class="img-box">
+                                {% if residuo.resultado_json.imagen_procesada %}
+                                <img src="{{ residuo.resultado_json.imagen_procesada }}" alt="Procesada">
+                                {% else %}
+                                <span style="font-size:.72rem;color:var(--text-muted);">No disp.</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Objetos detectados -->
+                        <div class="col-4 col-md-3">
+                            <div style="font-size:.7rem;color:var(--text-muted);
+                                        margin-bottom:4px;font-weight:600;">OBJETOS</div>
+                            {% if residuo.resultado_json.objetos %}
+                            <ul class="list-group list-group-flush">
+                                {% for nombre, cantidad in residuo.resultado_json.objetos.items|slice:":5" %}
+                                <li class="list-group-item d-flex justify-content-between px-0"
+                                    style="background:transparent;border-color:var(--divider);
+                                           font-size:.75rem;padding:3px 0;">
+                                    <span style="overflow:hidden;text-overflow:ellipsis;
+                                                 white-space:nowrap;max-width:80%;">{{ nombre }}</span>
+                                    <span class="badge-eco" style="font-size:.65rem;">{{ cantidad }}</span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <span style="font-size:.75rem;color:var(--text-muted);">Sin objetos</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Resumen / total -->
+                        <div class="col-12 col-md-3">
+                            <div style="font-size:.7rem;color:var(--text-muted);
+                                        margin-bottom:4px;font-weight:600;">RESUMEN</div>
+                            <div class="d-flex flex-column gap-1">
+                                <span class="pill" style="font-size:.72rem;">
+                                    <i class="fa-solid fa-hashtag me-1" style="font-size:.6rem;"></i>
+                                    Total: {{ residuo.resultado_json.total|default:0 }}
+                                </span>
+                                <span class="pill" style="font-size:.72rem;">
+                                    {{ residuo.categoria|default:"Pendiente" }}
+                                </span>
+                            </div>
+                        </div>
+
+                    </div><!-- /row -->
+                </div>
+            </div>
+            {% empty %}
+            <div class="text-center py-4" style="color:var(--text-muted);">
+                <i class="fa-solid fa-images fa-2x mb-2" style="opacity:.3;"></i>
+                <p class="mb-0">No hay imágenes registradas.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ─── Preview imagen ────────────────────────────────────────────────────────
+const inputImg = document.querySelector('input[type="file"]');
+const previewImg = document.getElementById('preview-img');
+const previewPh  = document.getElementById('preview-ph');
+
+inputImg?.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        previewImg.src = ev.target.result;
+        previewImg.classList.remove('d-none');
+        previewPh.classList.add('d-none');
+    };
+    reader.readAsDataURL(file);
+});
+
+// (overlay slider eliminado — se muestran original y procesada lado a lado)
+
+// ─── Cámara en vivo ────────────────────────────────────────────────────────
+const video         = document.getElementById('video-camara');
+const canvasCapture = document.getElementById('canvas-camara');
+const canvasOverlay = document.getElementById('overlay-canvas');
+const btnIniciar    = document.getElementById('btn-iniciar-camara');
+const btnDetener    = document.getElementById('btn-detener-camara');
+const btnGuardar    = document.getElementById('btn-guardar-analisis');
+const cameraStatus  = document.getElementById('camera-status');
+const captureCtx    = canvasCapture.getContext('2d');
+const overlayCtx    = canvasOverlay.getContext('2d');
+const apiUrl        = "{% url 'api_analizar_frame' %}";
+const csrfToken     = '{{ csrf_token }}';
+
+let stream = null, intervalId = null, processing = false, lastCapture = null;
+const ANALYSIS_MS = 900, MAX_W = 360, PERSIST_MS = 2800, SMOOTHING = 0.16;
+let trackCounter = 1, activeTracks = [], overlayRunning = false;
+
+function renderLista(id, data, empty) {
+    const el = document.getElementById(id);
+    el.innerHTML = '';
+    const keys = Object.keys(data || {});
+    if (!keys.length) { el.innerHTML = `<p class="text-muted mb-0 small">${empty}</p>`; return; }
+    const ul = document.createElement('ul');
+    ul.className = 'list-group list-group-flush';
+    keys.forEach(k => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between px-0';
+        li.style = 'background:transparent;border-color:var(--divider);font-size:.78rem;padding:2px 0;';
+        li.innerHTML = `<span>${k}</span><span>${data[k]}</span>`;
+        ul.appendChild(li);
+    });
+    el.appendChild(ul);
+}
+
+function clearOverlay() { overlayCtx.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height); }
+
+function resizeCanvases() {
+    if (!video.videoWidth) return;
+    let w = video.videoWidth, h = video.videoHeight;
+    if (w > MAX_W) { const s = MAX_W / w; w = MAX_W; h = Math.round(h * s); }
+    canvasCapture.width = canvasOverlay.width = w;
+    canvasCapture.height = canvasOverlay.height = h;
+}
+
+function iou(a, b) {
+    const ix1 = Math.max(a.x1,b.x1), iy1 = Math.max(a.y1,b.y1);
+    const ix2 = Math.min(a.x2,b.x2), iy2 = Math.min(a.y2,b.y2);
+    const inter = Math.max(0,ix2-ix1)*Math.max(0,iy2-iy1);
+    const ua = (a.x2-a.x1)*(a.y2-a.y1), ub = (b.x2-b.x1)*(b.y2-b.y1);
+    return (ua+ub-inter) > 0 ? inter/(ua+ub-inter) : 0;
+}
+
+function findTrack(box) {
+    let best = null, bestScore = 0;
+    activeTracks.forEach(t => {
+        if (t.label !== box.label) return;
+        const score = iou(t, box);
+        if (score > bestScore) { bestScore = score; best = t; }
+    });
+    return bestScore >= 0.05 ? best : null;
+}
+
+function updateTracks(boxes) {
+    const now = Date.now();
+    boxes.forEach(box => {
+        const t = findTrack(box);
+        if (t) {
+            ['x1','y1','x2','y2'].forEach(k => t[k] += (box[k]-t[k])*SMOOTHING);
+            t.label = box.label; t.confianza = box.confianza;
+            t.material = box.material; t.color = box.color; t.lastSeen = now;
+        } else {
+            activeTracks.push({ id: trackCounter++, ...box, lastSeen: now });
+        }
+    });
+    activeTracks = activeTracks.filter(t => Date.now()-t.lastSeen <= PERSIST_MS);
+}
+
+function drawOverlay() {
+    if (!overlayRunning) return;
+    const now = Date.now();
+    clearOverlay();
+    activeTracks.forEach(t => {
+        const life = Math.max(0, 1-(Date.now()-t.lastSeen)/PERSIST_MS);
+        if (life <= 0) return;
+        const alpha = Math.max(0.38, life);
+        const x = t.x1, y = t.y1, w = t.x2-t.x1, h = t.y2-t.y1;
+        const color = t.color || '#00ff00';
+        overlayCtx.save();
+        overlayCtx.globalAlpha = alpha;
+        overlayCtx.strokeStyle = color; overlayCtx.lineWidth = 4;
+        overlayCtx.shadowColor = color; overlayCtx.shadowBlur = 8;
+        overlayCtx.strokeRect(x,y,w,h);
+        overlayCtx.shadowBlur = 0;
+        const label = `${t.label} ${Number(t.confianza||0).toFixed(2)}`;
+        overlayCtx.font = 'bold 14px Inter,Arial';
+        const tw = overlayCtx.measureText(label).width;
+        const lh = 24, ly = y-lh-4 < 0 ? y+4 : y-lh-4;
+        overlayCtx.fillStyle = color; overlayCtx.fillRect(x, ly, tw+14, lh);
+        overlayCtx.fillStyle = '#fff'; overlayCtx.fillText(label, x+7, ly+17);
+        overlayCtx.restore();
+    });
+    if (!activeTracks.length) {
+        overlayCtx.save(); overlayCtx.fillStyle = 'rgba(255,255,255,.8)';
+        overlayCtx.font = 'bold 18px Inter,Arial';
+        overlayCtx.fillText('Sin detecciones', 16, 30); overlayCtx.restore();
+    }
+    requestAnimationFrame(drawOverlay);
+}
+
+function renderLive(r, showImg=false) {
+    document.getElementById('cam-objeto').textContent = r.objeto_principal||'–';
+    document.getElementById('cam-material').textContent = r.material_predominante||'–';
+    document.getElementById('cam-total').textContent = r.cantidad_total||0;
+    document.getElementById('cam-confianza').textContent = Number(r.confianza||0).toFixed(2);
+    renderLista('cam-objetos', r.objetos||{}, 'Sin detecciones');
+    renderLista('cam-materiales', r.materiales||{}, 'Sin materiales');
+    const imgEl = document.getElementById('cam-img-proc');
+    if (showImg && r.imagen_procesada) { imgEl.src = r.imagen_procesada; imgEl.classList.remove('d-none'); }
+}
+
+function escHtml(t) { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
+
+function addHistoryCard(r) {
+    const objetos = r.resultado_json?.objetos||{};
+    const container = document.getElementById('historial-container');
+    const div = document.createElement('div');
+    div.className = 'card mb-3 border-0';
+    div.style = 'box-shadow:var(--card-shadow);background:var(--card-bg);';
+    div.innerHTML = `
+        <div class="card-body p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
+                <div>
+                    <h6 class="mb-1 fw-semibold">${escHtml(r.tipo||'Sin nombre')}</h6>
+                    <div class="text-muted" style="font-size:.75rem;">${escHtml(r.fecha||'')}</div>
+                </div>
+                <div>
+                    <span class="pill">${escHtml(r.categoria||'')}</span>
+                    <span class="pill">Conf: ${Number(r.confianza||0).toFixed(2)}</span>
+                </div>
+            </div>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <div class="img-box" style="min-height:120px;">
+                        <img src="${escHtml(r.imagen_url)}" alt="Original">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="img-box" style="min-height:120px;">
+                        ${r.resultado_json?.imagen_procesada
+                            ? `<img src="${escHtml(r.resultado_json.imagen_procesada)}" alt="Procesada">`
+                            : '<span class="text-muted small">Sin imagen</span>'}
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    container.insertAdjacentElement('afterbegin', div);
+}
+
+async function sendFrame(save=false) {
+    if (!stream || processing || !video.videoWidth) return;
+    processing = true;
+    cameraStatus.textContent = save ? 'Guardando…' : 'Analizando…';
+    resizeCanvases();
+    captureCtx.drawImage(video, 0, 0, canvasCapture.width, canvasCapture.height);
+    const b64 = canvasCapture.toDataURL('image/jpeg', 0.68);
+    lastCapture = b64;
+    try {
+        const r = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+            body: JSON.stringify({ image: b64, guardar: save }),
+        });
+        const data = await r.json();
+        if (!data.ok) { cameraStatus.textContent = 'Error al analizar'; return; }
+        const res = data.resultado;
+        renderLive(res, save);
+        updateTracks(res.boxes||[]);
+        cameraStatus.textContent = save ? 'Análisis guardado.' : 'Cámara activa.';
+        if (save && res.guardado && res.residuo) addHistoryCard(res.residuo);
+    } catch { cameraStatus.textContent = 'Error de conexión'; }
+    finally { processing = false; }
+}
+
+btnIniciar?.addEventListener('click', async () => {
+    try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error('Cámara no soportada.');
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal:'environment' } }, audio: false });
+        video.srcObject = stream;
+        await video.play();
+        resizeCanvases();
+        btnIniciar.disabled = true; btnDetener.disabled = false; btnGuardar.disabled = false;
+        cameraStatus.textContent = 'Cámara iniciada.';
+        overlayRunning = true;
+        requestAnimationFrame(drawOverlay);
+        intervalId = setInterval(() => sendFrame(false), ANALYSIS_MS);
+        setTimeout(() => sendFrame(false), 250);
+    } catch(e) {
+        alert('Error al iniciar cámara:\n' + e.message);
+        cameraStatus.textContent = 'Error al iniciar cámara.';
+    }
+});
+
+btnDetener?.addEventListener('click', () => {
+    clearInterval(intervalId); intervalId = null;
+    stream?.getTracks().forEach(t => t.stop()); stream = null;
+    video.srcObject = null; overlayRunning = false; clearOverlay();
+    activeTracks = []; processing = false; lastCapture = null;
+    btnIniciar.disabled = false; btnDetener.disabled = true; btnGuardar.disabled = true;
+    ['cam-objeto','cam-material','cam-total','cam-confianza'].forEach(id => {
+        document.getElementById(id).textContent = id.includes('total') || id.includes('confianza') ? '0' : '–';
+    });
+    cameraStatus.textContent = 'Cámara detenida.';
+});
+
+btnGuardar?.addEventListener('click', async () => {
+    if (!stream) { alert('Primero inicia la cámara.'); return; }
+    await sendFrame(true);
+});
+</script>
+{% endblock %}

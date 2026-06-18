@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Mi Perfil{% endblock %}
+{% block page_title %}Mi Perfil{% endblock %}
+{% block breadcrumb_items %}Perfil{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+    <!-- Avatar y resumen -->
+    <div class="col-lg-4">
+        <div class="card text-center p-4">
+            <div class="d-flex justify-content-center mb-3">
+                <div style="width:80px;height:80px;border-radius:20px;background:linear-gradient(135deg,#52b788,#1b4332);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:800;color:#fff;">
+                    {{ request.user.iniciales }}
+                </div>
+            </div>
+            <h5 class="fw-bold mb-1">{{ request.user.get_full_name|default:request.user.username }}</h5>
+            <p class="text-muted mb-3" style="font-size:0.82rem;">@{{ request.user.username }}</p>
+            <div class="mb-2">
+                {% if request.user.rol == 'administrador' %}
+                    <span class="badge bg-primary">Administrador</span>
+                {% else %}
+                    <span class="badge" style="background:#e5e7eb;color:#374151;">Operador</span>
+                {% endif %}
+                {% if request.user.is_superuser %}
+                    <span class="badge bg-danger ms-1">Superusuario</span>
+                {% endif %}
+            </div>
+            {% if request.user.departamento %}
+            <p class="text-muted mb-0" style="font-size:0.8rem;">
+                <i class="fa-solid fa-building me-1"></i>{{ request.user.departamento }}
+            </p>
+            {% endif %}
+            {% if request.user.telefono %}
+            <p class="text-muted mb-0 mt-1" style="font-size:0.8rem;">
+                <i class="fa-solid fa-phone me-1"></i>{{ request.user.telefono }}
+            </p>
+            {% endif %}
+            {% if request.user.email %}
+            <p class="text-muted mb-0 mt-1" style="font-size:0.8rem;">
+                <i class="fa-solid fa-envelope me-1"></i>{{ request.user.email }}
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Editar perfil -->
+    <div class="col-lg-8">
+        <!-- Datos personales -->
+        <div class="card mb-4">
+            <div class="card-header" style="background:var(--table-head-bg);border-color:var(--card-border);border-radius:14px 14px 0 0;padding:16px 24px;">
+                <h6 class="fw-bold mb-0" style="color:var(--primary);">
+                    <i class="fa-solid fa-user me-2"></i>Datos personales
+                </h6>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST" action="{% url 'perfil' %}">
+                    {% csrf_token %}
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Nombre</label>
+                            {{ form.first_name }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Apellido</label>
+                            {{ form.last_name }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Email</label>
+                            {{ form.email }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Departamento</label>
+                            {{ form.departamento }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Teléfono</label>
+                            {{ form.telefono }}
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end mt-3">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fa-solid fa-floppy-disk me-1"></i>Guardar cambios
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Cambiar contraseña -->
+        <div class="card">
+            <div class="card-header" style="background:var(--table-head-bg);border-color:var(--card-border);border-radius:14px 14px 0 0;padding:16px 24px;">
+                <h6 class="fw-bold mb-0" style="color:var(--primary);">
+                    <i class="fa-solid fa-lock me-2"></i>Cambiar contraseña
+                </h6>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST" action="{% url 'cambiar_password' %}">
+                    {% csrf_token %}
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">Contraseña actual</label>
+                            <input type="password" name="old_password" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Nueva contraseña</label>
+                            <input type="password" name="new_password1" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Confirmar nueva contraseña</label>
+                            <input type="password" name="new_password2" class="form-control" required>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end mt-3">
+                        <button type="submit" class="btn btn-outline-success">
+                            <i class="fa-solid fa-key me-1"></i>Actualizar contraseña
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

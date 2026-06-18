@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+{% block title %}Administración{% endblock %}
+{% block nav_admin %}active{% endblock %}
+{% block page_title %}Administración de Residuos{% endblock %}
+{% block breadcrumb_items %}Administración{% endblock %}
+
+{% block extra_css %}
+<style>
+    .queue-item {
+        display:flex; align-items:center; gap:10px;
+        padding:8px 12px; border-radius:10px;
+        background:var(--body-bg); margin-bottom:8px;
+        border:1px solid var(--card-border);
+    }
+    .queue-badge {
+        width:30px; height:30px; border-radius:50%;
+        display:flex; align-items:center; justify-content:center;
+        font-weight:700; font-size:.82rem; flex-shrink:0;
+    }
+    #proc-status { display:none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="hero-banner mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <h2><i class="fa-solid fa-gears me-2"></i>Administración de Residuos</h2>
+            <p>Grammar Engine · Factory · Strategy · Cola de prioridad · Hilos · Exportación</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <div class="dropdown">
+                <button class="btn btn-light dropdown-toggle fw-semibold" data-bs-toggle="dropdown">
+                    <i class="fa-solid fa-download me-1"></i>Exportar
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="{% url 'admin_exportar' 'json' %}">
+                        <i class="fa-solid fa-file-code me-2" style="color:#f59e0b;"></i>JSON
+                    </a></li>
+                    <li><a class="dropdown-item" href="{% url 'admin_exportar' 'xml' %}">
+                        <i class="fa-solid fa-file-lines me-2" style="color:#3b82f6;"></i>XML
+                    </a></li>
+                    <li><a class="dropdown-item" href="{% url 'admin_exportar' 'txt' %}">
+                        <i class="fa-solid fa-file-alt me-2" style="color:#6b7280;"></i>TXT
+                    </a></li>
+                </ul>
+            </div>
+            <form method="POST" action="{% url 'admin_procesar_todos' %}" id="form-proc-todos">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-warning fw-bold" id="btn-proc-todos"
+                        {% if estado_proc.running %}disabled{% endif %}>
+                    <i class="fa-solid fa-bolt me-1"></i>
+                    {% if estado_proc.running %}
+                        Procesando… ({{ estado_proc.done }}/{{ estado_proc.total }})
+                    {% else %}
+                        Procesar pendientes ({{ pendientes }})
+                    {% endif %}
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Spinner procesamiento -->
+<div id="proc-status" class="alert alert-warning d-flex align-items-center gap-3 mb-3 rounded-3">
+    <div class="spinner-border spinner-border-sm text-warning" role="status"></div>
+    <span id="proc-msg">Procesando residuos en segundo plano…</span>
+</div>
+
+<!-- KPIs -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon mb-2" style="background:rgba(82,183,136,.12);">
+                <i class="fa-solid fa-images" style="color:#1b4332;"></i>
+            </div>
+            <div class="stat-value">{{ total_residuos }}</div>
+            <div class="stat-label">Total residuos</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon mb-2" style="background:rgba(59,130,246,.1);">
+                <i class="fa-solid fa-check-circle" style="color:#3b82f6;"></i>
+            </div>
+            <div class="stat-value">{{ total_analizados }}</div>
+            <div class="stat-label">Analizados</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon mb-2" style="background:rgba(249,115,22,.1);">
+                <i class="fa-solid fa-clock" style="color:#f97316;"></i>
+            </div>
+            <div class="stat-value">{{ pendientes }}</div>
+            <div class="stat-label">Pendientes</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon mb-2" style="background:rgba(239,68,68,.1);">
+                <i class="fa-solid fa-triangle-exclamation" style="color:#ef4444;"></i>
+            </div>
+            <div class="stat-value">{{ alertas_recientes|length }}</div>
+            <div class="stat-label">Alertas activas</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+
+    <!-- Tabla principal -->
+    <div class="col-lg-8">
+
+        <!-- Filtros -->
+        <div class="card mb-3">
+            <div class="card-body p-3">
+                <form method="GET" class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">Material</label>
+                        <select name="material" class="form-select form-select-sm">
+                            <option value="">Todos</option>
+                            {% for m in materiales_disponibles %}
+                            <option value="{{ m }}" {% if filtro_material == m %}selected{% endif %}>{{ m }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Prioridad</label>
+                        <select name="prioridad" class="form-select form-select-sm">
+                            <option value="">Todas</option>
+                            <option value="Alta"  {% if filtro_prioridad == "Alta"  %}selected{% endif %}>Alta</option>
+                            <option value="Media" {% if filtro_prioridad == "Media" %}selected{% endif %}>Media</option>
+                            <option value="Baja"  {% if filtro_prioridad == "Baja"  %}selected{% endif %}>Baja</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex gap-2">
+                        <button type="submit" class="btn btn-success btn-sm w-100">
+                            <i class="fa-solid fa-filter me-1"></i>Filtrar
+                        </button>
+                        <a href="{% url 'admin_dashboard' %}" class="btn btn-outline-secondary btn-sm w-100">
+                            <i class="fa-solid fa-xmark me-1"></i>Limpiar
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Tabla -->
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th class="ps-4">#</th>
+                                <th>Fecha</th>
+                                <th>Objeto detectado</th>
+                                <th>Material</th>
+                                <th>Prioridad</th>
+                                <th>Estado</th>
+                                <th class="pe-3"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in items %}
+                            <tr>
+                                <td class="ps-4 text-muted" style="font-size:.78rem;">{{ item.residuo.id }}</td>
+                                <td style="font-size:.8rem;">{{ item.residuo.fecha|date:"d/m/Y H:i" }}</td>
+                                <td>
+                                    <span class="fw-semibold" style="font-size:.85rem;">{{ item.residuo.tipo|default:"–" }}</span>
+                                    {% if item.residuo.resultado_json.total %}
+                                    <span class="pill ms-1" style="font-size:.7rem;">{{ item.residuo.resultado_json.total }} obj</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.admin %}
+                                    <span class="badge bg-{{ item.mat_color }}">{{ item.admin.material_predominante }}</span>
+                                    {% else %}
+                                    <span class="text-muted" style="font-size:.8rem;">Sin analizar</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.admin %}
+                                    <span class="badge bg-{{ item.prio_color }}">{{ item.admin.prioridad }}</span>
+                                    {% else %}–{% endif %}
+                                </td>
+                                <td>
+                                    {% if item.admin %}
+                                    <span class="text-success" style="font-size:.8rem;">
+                                        <i class="fa-solid fa-check me-1"></i>Procesado
+                                    </span>
+                                    {% else %}
+                                    <span class="text-warning" style="font-size:.8rem;">
+                                        <i class="fa-solid fa-clock me-1"></i>Pendiente
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end pe-3">
+                                    {% if item.admin %}
+                                    <a href="{% url 'admin_detalle' item.residuo.id %}" class="btn btn-outline-success btn-sm">
+                                        <i class="fa-solid fa-eye me-1"></i>Ver
+                                    </a>
+                                    {% else %}
+                                    <a href="{% url 'admin_procesar' item.residuo.id %}" class="btn btn-outline-primary btn-sm">
+                                        <i class="fa-solid fa-bolt me-1"></i>Analizar
+                                    </a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center py-5" style="color:var(--text-muted);">
+                                    <i class="fa-solid fa-box-open fa-2x mb-2" style="opacity:.3;"></i>
+                                    <p class="mb-0">No hay residuos que coincidan con los filtros.</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel lateral -->
+    <div class="col-lg-4 d-flex flex-column gap-4">
+
+        <!-- Cola de prioridad -->
+        <div class="card p-4">
+            <h6 class="section-title mb-3">
+                <i class="fa-solid fa-arrow-up-wide-short me-2"></i>Cola de Prioridad
+                <span class="badge bg-success ms-1" style="font-size:.65rem;">PriorityQueue</span>
+            </h6>
+            {% if cola_ordenada %}
+            {% for entry in cola_ordenada %}
+            <div class="queue-item">
+                <div class="queue-badge bg-{{ entry.mat_color }}
+                    {% if entry.mat_color == 'light' or entry.mat_color == 'warning' %}text-dark{% else %}text-white{% endif %}">
+                    {{ entry.nivel }}
+                </div>
+                <div class="flex-grow-1">
+                    <div class="fw-semibold" style="font-size:.82rem;">{{ entry.admin.material_predominante }}</div>
+                    <div class="text-muted" style="font-size:.75rem;">
+                        Residuo #{{ entry.residuo.id }} ·
+                        <span class="badge bg-{{ entry.color }}" style="font-size:.65rem;">{{ entry.admin.prioridad }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="text-muted small">Analiza residuos para ver la cola.</p>
+            {% endif %}
+            <div class="mt-2 text-muted" style="font-size:.72rem; line-height:1.6;">
+                Metal=1 · Vidrio=2 · Plástico=3 · Papel/Cartón=4 · Orgánico=5 · Otro=6
+            </div>
+        </div>
+
+        <!-- Distribución materiales -->
+        <div class="card p-4">
+            <h6 class="section-title mb-3">
+                <i class="fa-solid fa-chart-bar me-2"></i>Distribución de materiales
+            </h6>
+            {% if materiales_count %}
+            {% for mat, cnt in materiales_count.items %}
+            <div class="d-flex justify-content-between mb-1" style="font-size:.82rem;">
+                <span class="fw-semibold">{{ mat }}</span>
+                <span class="text-muted">{{ cnt }}</span>
+            </div>
+            <div class="progress mb-3" style="height:5px; border-radius:99px; background:var(--card-border);">
+                <div class="progress-bar" role="progressbar"
+                     style="width:{% widthratio cnt total_analizados 100 %}%; background:var(--accent);"></div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="text-muted small">Sin datos todavía.</p>
+            {% endif %}
+        </div>
+
+        <!-- Alertas -->
+        <div class="card p-4">
+            <h6 class="section-title mb-3">
+                <i class="fa-solid fa-bell me-2"></i>Alertas recientes
+            </h6>
+            {% if alertas_recientes %}
+            {% for alerta in alertas_recientes %}
+            <div class="d-flex align-items-start gap-2 mb-2">
+                <i class="fa-solid fa-triangle-exclamation text-warning mt-1" style="font-size:.8rem;"></i>
+                <div>
+                    <div style="font-size:.8rem;">{{ alerta.texto }}</div>
+                    <a href="{% url 'admin_detalle' alerta.residuo_id %}"
+                       style="font-size:.72rem; color:var(--accent); text-decoration:none;">
+                        Ver Residuo #{{ alerta.residuo_id }}
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="text-muted small">Sin alertas activas.</p>
+            {% endif %}
+        </div>
+
+        <!-- Grammar Engine Info -->
+        <div class="card p-4">
+            <h6 class="section-title mb-3">
+                <i class="fa-solid fa-code me-2"></i>Grammar Engine
+            </h6>
+            <div class="grammar-box">
+<span style="color:#22c55e;"># Gramática Módulo 2</span>
+GRAMMAR = {
+  "objeto":   { type: str, required: True },
+  "cantidad": { type: int, min: 0 }
+}
+
+<span style="color:#22c55e;"># Ejemplo de regla</span>
+IF objeto == "Lata"
+  THEN material = "Metal"
+       prioridad_base = 1
+
+IF objeto == "Botella plástica"
+  THEN material = "Plástico"
+       prioridad_base = 3
+
+<span style="color:#f59e0b;"># Alerta por cantidad</span>
+IF total &gt; 20 → "Alta"
+IF total &gt; 10 → "Media"
+ELSE           → "Baja"
+            </div>
+            <div class="mt-2 text-muted" style="font-size:.72rem;">
+                Parser · Validator · RuleEngine · Interpreter · Extractor · Transformer
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const statusDiv = document.getElementById('proc-status');
+    const msgSpan   = document.getElementById('proc-msg');
+    const btnProc   = document.getElementById('btn-proc-todos');
+    let polling     = {{ estado_proc.running|yesno:"true,false" }};
+
+    if (polling) { statusDiv.style.display = 'flex'; }
+
+    function checkStatus() {
+        fetch("{% url 'admin_estado' %}")
+            .then(r => r.json())
+            .then(d => {
+                if (d.running) {
+                    statusDiv.style.display = 'flex';
+                    if (btnProc) { btnProc.disabled = true; btnProc.textContent = `Procesando… (${d.done}/${d.total})`; }
+                    msgSpan.textContent = `Procesando residuos en segundo plano… (${d.done}/${d.total})`;
+                    setTimeout(checkStatus, 1200);
+                } else {
+                    statusDiv.style.display = 'none';
+                    if (polling) { polling = false; location.reload(); }
+                }
+            })
+            .catch(() => {});
+    }
+
+    if (polling) { setTimeout(checkStatus, 1200); }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,5 @@
+# Dependencias adicionales para completar el proyecto EcoTrack
+# Instalar con: pip install -r requirements-extra.txt
+
+python-dotenv==1.0.1
+openpyxl==3.1.5

@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% block title %}Ruta #{{ ruta.pk }}{% endblock %}
+{% block nav_recoleccion %}active{% endblock %}
+{% block page_title %}{{ ruta.nombre }}{% endblock %}
+{% block breadcrumb_items %}
+    <a href="{% url 'rutas_lista' %}" style="color:var(--accent);">Recolección</a>
+    <i class="fa-solid fa-chevron-right" style="font-size:.55rem;opacity:.5;"></i>
+    Ruta #{{ ruta.pk }}
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+    <!-- Info de la ruta -->
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-body p-4">
+                <h6 class="fw-bold mb-3" style="color:var(--primary);">
+                    <i class="fa-solid fa-info-circle me-2"></i>Información de la ruta
+                </h6>
+                <table class="table table-sm" style="font-size:0.83rem;">
+                    <tr>
+                        <th style="width:40%;color:var(--text-secondary);">Estado</th>
+                        <td>
+                            <span class="badge bg-{{ ruta.color_estado }}" id="badge-estado">
+                                {{ ruta.get_estado_display }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th style="color:var(--text-secondary);">Prioridad</th>
+                        <td><span class="badge bg-{{ ruta.color_prioridad }}">{{ ruta.get_prioridad_display }}</span></td>
+                    </tr>
+                    <tr>
+                        <th style="color:var(--text-secondary);">Zona</th>
+                        <td>
+                            {% if ruta.zona %}
+                            <span style="display:inline-flex;align-items:center;gap:5px;">
+                                <span style="width:10px;height:10px;border-radius:50%;background:{{ ruta.zona.color }};"></span>
+                                {{ ruta.zona.nombre }}
+                            </span>
+                            {% else %}–{% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th style="color:var(--text-secondary);">Operador</th>
+                        <td>{{ ruta.operador|default:"Sin asignar" }}</td>
+                    </tr>
+                    <tr>
+                        <th style="color:var(--text-secondary);">Fecha prog.</th>
+                        <td>{{ ruta.fecha_programada|date:"d/m/Y" }}
+                            {% if ruta.hora_programada %} {{ ruta.hora_programada|time:"H:i" }}{% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th style="color:var(--text-secondary);">Creada</th>
+                        <td>{{ ruta.fecha_creacion|date:"d/m/Y" }}</td>
+                    </tr>
+                    {% if ruta.fecha_completada %}
+                    <tr>
+                        <th style="color:var(--text-secondary);">Completada</th>
+                        <td>{{ ruta.fecha_completada|date:"d/m/Y H:i" }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <th style="color:var(--text-secondary);">Residuos</th>
+                        <td><span class="badge-eco" id="total-residuos">{{ ruta.total_residuos }}</span></td>
+                    </tr>
+                </table>
+
+                {% if ruta.notas %}
+                <div class="mt-2 p-3" style="background:var(--body-bg);border-radius:10px;font-size:0.82rem;color:var(--text-secondary);">
+                    {{ ruta.notas }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Cambiar estado -->
+        <div class="card mb-4">
+            <div class="card-body p-4">
+                <h6 class="fw-bold mb-3" style="color:var(--primary);">
+                    <i class="fa-solid fa-arrows-rotate me-2"></i>Cambiar estado
+                </h6>
+                <div class="d-grid gap-2">
+                    {% for code, label in ruta.ESTADOS %}
+                    {% if code != ruta.estado %}
+                    <button class="btn btn-outline-secondary btn-sm text-start btn-estado" data-estado="{{ code }}"
+                            style="border-radius:9px;">
+                        {% if code == 'en_proceso' %}<i class="fa-solid fa-truck-fast me-2" style="color:#3b82f6;"></i>
+                        {% elif code == 'completada' %}<i class="fa-solid fa-circle-check me-2" style="color:#22c55e;"></i>
+                        {% elif code == 'cancelada' %}<i class="fa-solid fa-ban me-2" style="color:#ef4444;"></i>
+                        {% else %}<i class="fa-solid fa-hourglass-half me-2" style="color:#f97316;"></i>
+                        {% endif %}
+                        Marcar como {{ label }}
+                    </button>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Acciones -->
+        <div class="d-flex gap-2">
+            <a href="{% url 'rutas_editar' ruta.pk %}" class="btn btn-outline-secondary flex-fill">
+                <i class="fa-solid fa-pencil me-1"></i>Editar
+            </a>
+            <form method="POST" action="{% url 'rutas_eliminar' ruta.pk %}" class="flex-fill"
+                  onsubmit="return confirm('¿Eliminar esta ruta?')">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-danger w-100">
+                    <i class="fa-solid fa-trash me-1"></i>Eliminar
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Residuos asignados -->
+    <div class="col-lg-8">
+        <!-- Asignados -->
+        <div class="card mb-4">
+            <div class="card-header" style="background:var(--table-head-bg);border-color:var(--card-border);border-radius:14px 14px 0 0;padding:16px 20px;">
+                <h6 class="mb-0 fw-bold" style="color:var(--primary);">
+                    <i class="fa-solid fa-boxes-stacked me-2"></i>Residuos asignados
+                    <span class="badge-eco ms-2" id="total-residuos-2">{{ ruta.total_residuos }}</span>
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                {% if ruta.residuos.all %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" style="font-size:0.83rem;">
+                        <thead>
+                            <tr>
+                                <th class="ps-4">ID</th>
+                                <th>Objeto</th>
+                                <th>Material</th>
+                                <th>Prioridad</th>
+                                <th>Fecha</th>
+                                <th class="pe-4">Quitar</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-asignados">
+                            {% for r in ruta.residuos.all %}
+                            <tr id="fila-{{ r.pk }}">
+                                <td class="ps-4">#{{ r.pk }}</td>
+                                <td>{{ r.tipo|default:"–" }}</td>
+                                <td>
+                                    {% if r.administracion %}
+                                    <span class="badge-eco" style="font-size:0.72rem;">{{ r.administracion.material_predominante }}</span>
+                                    {% else %}
+                                    <span class="text-muted">Pendiente</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if r.administracion %}
+                                    <span class="badge bg-{% if r.administracion.prioridad == 'Alta' %}danger{% elif r.administracion.prioridad == 'Media' %}warning{% else %}success{% endif %}"
+                                          style="font-size:0.7rem;">
+                                        {{ r.administracion.prioridad }}
+                                    </span>
+                                    {% else %}–{% endif %}
+                                </td>
+                                <td>{{ r.fecha|date:"d/m/Y" }}</td>
+                                <td class="pe-4">
+                                    <button class="btn btn-sm btn-outline-danger btn-quitar" data-residuo="{{ r.pk }}">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4" style="color:var(--text-muted);">
+                    <i class="fa-solid fa-boxes-stacked fa-2x mb-2" style="opacity:.3;"></i>
+                    <p class="mb-0 small">No hay residuos asignados a esta ruta.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Agregar residuos -->
+        <div class="card">
+            <div class="card-header" style="background:var(--table-head-bg);border-color:var(--card-border);border-radius:14px 14px 0 0;padding:16px 20px;">
+                <h6 class="mb-0 fw-bold" style="color:var(--primary);">
+                    <i class="fa-solid fa-plus me-2"></i>Agregar residuos
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                {% if disponibles %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" style="font-size:0.83rem;">
+                        <thead>
+                            <tr>
+                                <th class="ps-4">ID</th>
+                                <th>Tipo</th>
+                                <th>Categoría</th>
+                                <th>Fecha</th>
+                                <th class="pe-4">Agregar</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in disponibles %}
+                            <tr id="disp-{{ r.pk }}">
+                                <td class="ps-4">#{{ r.pk }}</td>
+                                <td>{{ r.tipo|default:"–" }}</td>
+                                <td>{{ r.categoria|default:"–" }}</td>
+                                <td>{{ r.fecha|date:"d/m/Y" }}</td>
+                                <td class="pe-4">
+                                    <button class="btn btn-sm btn-outline-success btn-agregar" data-residuo="{{ r.pk }}">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4" style="color:var(--text-muted);">
+                    <p class="mb-0 small">Todos los residuos ya están asignados.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const rutaId = {{ ruta.pk }};
+const csrfToken = '{{ csrf_token }}';
+
+function actualizarTotal(total) {
+    document.getElementById('total-residuos').textContent = total;
+    document.getElementById('total-residuos-2').textContent = total;
+}
+
+// Cambiar estado
+document.querySelectorAll('.btn-estado').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const estado = btn.dataset.estado;
+        const resp = await fetch(`/recoleccion/${rutaId}/estado/`, {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded'},
+            body: `estado=${estado}`
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            location.reload();
+        } else {
+            alert(data.error || 'Error al cambiar estado.');
+        }
+    });
+});
+
+// Quitar residuo
+document.querySelectorAll('.btn-quitar').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const rid = btn.dataset.residuo;
+        const resp = await fetch(`/recoleccion/${rutaId}/residuo/`, {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded'},
+            body: `residuo_id=${rid}&accion=quitar`
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            document.getElementById(`fila-${rid}`)?.remove();
+            actualizarTotal(data.total);
+        }
+    });
+});
+
+// Agregar residuo
+document.querySelectorAll('.btn-agregar').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const rid = btn.dataset.residuo;
+        const resp = await fetch(`/recoleccion/${rutaId}/residuo/`, {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded'},
+            body: `residuo_id=${rid}&accion=agregar`
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            document.getElementById(`disp-${rid}`)?.remove();
+            actualizarTotal(data.total);
+        }
+    });
+});
+</script>
+{% endblock %}

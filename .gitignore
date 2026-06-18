@@ -1,0 +1,46 @@
+# ── Base de datos ────────────────────────────────────────────
+db.sqlite3
+*.sqlite3
+
+# ── Variables de entorno (contiene API keys) ─────────────────
+.env
+.env.local
+.env.production
+
+# ── Entorno virtual ──────────────────────────────────────────
+venv/
+env/
+.venv/
+ENV/
+
+# ── Imágenes subidas por usuarios ────────────────────────────
+media/
+
+# ── Archivos compilados de Python ────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# ── Archivos estáticos generados ─────────────────────────────
+staticfiles/
+
+# ── Archivos del sistema operativo ───────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── VS Code ──────────────────────────────────────────────────
+.vscode/
+*.code-workspace
+
+# ── PyCharm ──────────────────────────────────────────────────
+.idea/
+
+# ── Logs ─────────────────────────────────────────────────────
+*.log
+
+# ── Modelo YOLO entrenado (pesa mucho, subirlo aparte) ───────
+# apps/clasificacion/models/best.pt
+# Comenta la línea de arriba si quieres incluirlo en el repo

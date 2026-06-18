@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Historial{% endblock %}
+{% block nav_historial %}active{% endblock %}
+{% block page_title %}Historial de actividad{% endblock %}
+{% block breadcrumb_items %}Historial{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="hero-banner mb-4">
+    <h2><i class="fa-solid fa-clock-rotate-left me-2"></i>Historial de actividad</h2>
+    <p>Registro completo de todas las acciones realizadas en el sistema.</p>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <div class="stat-icon" style="background:rgba(82,183,136,.12);">
+                    <i class="fa-solid fa-calendar-day" style="color:#1b4332;"></i>
+                </div>
+                <div class="stat-label">Hoy</div>
+            </div>
+            <div class="stat-value">{{ stats.hoy }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <div class="stat-icon" style="background:rgba(59,130,246,.1);">
+                    <i class="fa-solid fa-calendar-week" style="color:#3b82f6;"></i>
+                </div>
+                <div class="stat-label">Esta semana</div>
+            </div>
+            <div class="stat-value">{{ stats.semana }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <div class="stat-icon" style="background:rgba(168,85,247,.1);">
+                    <i class="fa-solid fa-database" style="color:#a855f7;"></i>
+                </div>
+                <div class="stat-label">Total registros</div>
+            </div>
+            <div class="stat-value">{{ stats.total }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <div class="stat-icon" style="background:rgba(249,115,22,.1);">
+                    <i class="fa-solid fa-users" style="color:#f97316;"></i>
+                </div>
+                <div class="stat-label">Usuarios activos</div>
+            </div>
+            <div class="stat-value">{{ stats.usuarios }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Filtros -->
+<div class="card mb-4">
+    <div class="card-body p-3">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label mb-1">Acción</label>
+                <select name="accion" class="form-select form-select-sm">
+                    <option value="">Todas</option>
+                    {% for code, label in acciones %}
+                    <option value="{{ code }}" {% if accion == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label mb-1">Módulo</label>
+                <select name="modulo" class="form-select form-select-sm">
+                    <option value="">Todos</option>
+                    {% for code, label in modulos %}
+                    <option value="{{ code }}" {% if modulo == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label mb-1">Usuario</label>
+                <input type="text" name="usuario" value="{{ usuario_q }}" class="form-control form-control-sm" placeholder="username…">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label mb-1">Desde</label>
+                <input type="date" name="fecha_desde" value="{{ fecha_desde }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label mb-1">Hasta</label>
+                <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn btn-success btn-sm">
+                    <i class="fa-solid fa-filter me-1"></i> Filtrar
+                </button>
+                <a href="{% url 'historial' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fa-solid fa-xmark me-1"></i> Limpiar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Timeline / Tabla -->
+<div class="card">
+    <div class="card-body p-0">
+        {% if page_obj %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" style="font-size:0.82rem;">
+                <thead>
+                    <tr>
+                        <th class="ps-4">Fecha y hora</th>
+                        <th>Usuario</th>
+                        <th>Acción</th>
+                        <th>Módulo</th>
+                        <th>Descripción</th>
+                        <th>IP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entrada in page_obj %}
+                    <tr>
+                        <td class="ps-4 text-nowrap">
+                            <div class="fw-semibold">{{ entrada.fecha|date:"d/m/Y" }}</div>
+                            <div class="text-muted" style="font-size:0.72rem;">{{ entrada.fecha|time:"H:i:s" }}</div>
+                        </td>
+                        <td>
+                            {% if entrada.usuario %}
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="sb-avatar" style="width:26px;height:26px;border-radius:7px;font-size:0.65rem;background:linear-gradient(135deg,#52b788,#1b4332);">
+                                    {{ entrada.usuario.iniciales }}
+                                </div>
+                                {{ entrada.usuario.username }}
+                            </div>
+                            {% else %}
+                            <span class="text-muted">Sistema</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if entrada.accion == 'LOGIN' %}
+                                <span class="badge bg-success">{{ entrada.get_accion_display }}</span>
+                            {% elif entrada.accion == 'LOGOUT' %}
+                                <span class="badge bg-secondary">{{ entrada.get_accion_display }}</span>
+                            {% elif entrada.accion == 'ELIMINAR' %}
+                                <span class="badge bg-danger">{{ entrada.get_accion_display }}</span>
+                            {% elif entrada.accion == 'CREAR' %}
+                                <span class="badge bg-primary">{{ entrada.get_accion_display }}</span>
+                            {% elif entrada.accion == 'ANALIZAR' %}
+                                <span class="badge" style="background:#0ea5e9;color:#fff;">{{ entrada.get_accion_display }}</span>
+                            {% elif entrada.accion == 'EXPORTAR' %}
+                                <span class="badge bg-warning text-dark">{{ entrada.get_accion_display }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ entrada.get_accion_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge-eco" style="font-size:0.72rem;">
+                                {{ entrada.get_modulo_display }}
+                            </span>
+                        </td>
+                        <td style="max-width:320px;">
+                            <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                                {{ entrada.descripcion }}
+                            </div>
+                        </td>
+                        <td style="font-family:monospace;font-size:0.72rem;color:var(--text-muted);">
+                            {{ entrada.ip_address|default:"–" }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5" style="color:var(--text-muted);">
+            <i class="fa-solid fa-clock-rotate-left fa-2x mb-3" style="opacity:.3;"></i>
+            <p class="mb-0">No hay entradas en el historial con los filtros aplicados.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Paginación -->
+    {% if page_obj.has_other_pages %}
+    <div class="card-footer d-flex justify-content-between align-items-center"
+         style="background:var(--table-head-bg);border-color:var(--card-border);border-radius:0 0 14px 14px;">
+        <span style="font-size:0.78rem;color:var(--text-muted);">
+            Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+            ({{ page_obj.paginator.count }} registros)
+        </span>
+        <div class="d-flex gap-1">
+            {% if page_obj.has_previous %}
+            <a href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}"
+               class="btn btn-sm btn-outline-secondary">
+                <i class="fa-solid fa-chevron-left"></i>
+            </a>
+            {% endif %}
+            {% if page_obj.has_next %}
+            <a href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}"
+               class="btn btn-sm btn-outline-secondary">
+                <i class="fa-solid fa-chevron-right"></i>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{% if modo == 'crear' %}Nueva Ruta{% else %}Editar Ruta{% endif %}{% endblock %}
+{% block nav_recoleccion %}active{% endblock %}
+{% block page_title %}{% if modo == 'crear' %}Nueva Ruta{% else %}Editar: {{ ruta.nombre }}{% endif %}{% endblock %}
+{% block breadcrumb_items %}
+    <a href="{% url 'rutas_lista' %}" style="color:var(--accent);">Recolección</a>
+    <i class="fa-solid fa-chevron-right" style="font-size:.55rem;opacity:.5;"></i>
+    {% if modo == 'crear' %}Nueva ruta{% else %}Editar{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-xl-7">
+        <div class="card">
+            <div class="card-header" style="background:var(--table-head-bg);border-color:var(--card-border);border-radius:14px 14px 0 0;padding:18px 24px;">
+                <h5 class="mb-0 fw-bold" style="color:var(--primary);">
+                    {% if modo == 'crear' %}
+                        <i class="fa-solid fa-route me-2"></i>Crear nueva ruta
+                    {% else %}
+                        <i class="fa-solid fa-pencil me-2"></i>Editar ruta de recolección
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST" novalidate>
+                    {% csrf_token %}
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger rounded-3 mb-4">{{ form.non_field_errors }}</div>
+                    {% endif %}
+
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">Nombre de la ruta *</label>
+                            {{ form.nombre }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Zona</label>
+                            {{ form.zona }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Operador asignado</label>
+                            {{ form.operador }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Fecha programada *</label>
+                            {{ form.fecha_programada }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Hora (opcional)</label>
+                            {{ form.hora_programada }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Prioridad *</label>
+                            {{ form.prioridad }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Notas adicionales</label>
+                            {{ form.notas }}
+                        </div>
+                    </div>
+
+                    <hr class="my-4" style="border-color:var(--divider);">
+                    <div class="d-flex gap-2 justify-content-end">
+                        <a href="{% url 'rutas_lista' %}" class="btn btn-outline-secondary">Cancelar</a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fa-solid fa-floppy-disk me-1"></i>
+                            {% if modo == 'crear' %}Crear ruta{% else %}Guardar cambios{% endif %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

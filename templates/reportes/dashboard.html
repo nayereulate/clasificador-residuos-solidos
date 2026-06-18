@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block title %}Reportes{% endblock %}
+{% block nav_reportes %}active{% endblock %}
+{% block page_title %}Reportes y Estadísticas{% endblock %}
+{% block breadcrumb_items %}Reportes{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chart-card { height: 340px; position: relative; }
+    .chart-card canvas { max-height: 280px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="hero-banner mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <h2><i class="fa-solid fa-chart-pie me-2"></i>Panel de Reportes</h2>
+            <p>Estadísticas en tiempo real del sistema de clasificación de residuos.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{% url 'reportes_excel' %}" class="btn btn-light fw-semibold">
+                <i class="fa-solid fa-file-excel me-2" style="color:#22c55e;"></i>Exportar Excel
+            </a>
+            <a href="{% url 'reportes_imprimir' %}" target="_blank" class="btn btn-outline-light fw-semibold">
+                <i class="fa-solid fa-print me-2"></i>Imprimir PDF
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- KPIs -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <div class="stat-icon" style="background:rgba(82,183,136,.12);">
+                    <i class="fa-solid fa-images" style="color:#1b4332;"></i>
+                </div>
+                <div class="stat-label">Total imágenes</div>
+            </div>
+            <div class="stat-value">{{ total }}</div>
+            <div class="stat-label mt-1">Analizadas con IA</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <div class="stat-icon" style="background:rgba(59,130,246,.1);">
+                    <i class="fa-solid fa-check-circle" style="color:#3b82f6;"></i>
+                </div>
+                <div class="stat-label">Clasificadas</div>
+            </div>
+            <div class="stat-value">{{ analizados }}</div>
+            <div class="stat-label mt-1">Con Grammar Engine</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <div class="stat-icon" style="background:rgba(249,115,22,.1);">
+                    <i class="fa-solid fa-clock" style="color:#f97316;"></i>
+                </div>
+                <div class="stat-label">Pendientes</div>
+            </div>
+            <div class="stat-value">{{ pendientes }}</div>
+            <div class="stat-label mt-1">Sin clasificar</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <div class="stat-icon" style="background:rgba(239,68,68,.1);">
+                    <i class="fa-solid fa-triangle-exclamation" style="color:#ef4444;"></i>
+                </div>
+                <div class="stat-label">Alertas activas</div>
+            </div>
+            <div class="stat-value">{{ alertas }}</div>
+            <div class="stat-label mt-1">Requieren atención</div>
+        </div>
+    </div>
+</div>
+
+<!-- Gráficas fila 1 -->
+<div class="row g-4 mb-4">
+    <!-- Materiales (Doughnut) -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header" style="background:var(--table-head-bg);border-color:var(--card-border);border-radius:14px 14px 0 0;padding:16px 20px;">
+                <h6 class="mb-0 fw-bold" style="color:var(--primary);">
+                    <i class="fa-solid fa-circle-half-stroke me-2"></i>Distribución por material
+                </h6>
+            </div>
+            <div class="card-body d-flex align-items-center justify-content-center p-3">
+                <div style="position:relative;width:100%;max-width:280px;">
+                    <canvas id="chart-materiales"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Temporal (Line) -->
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header" style="background:var(--table-head-bg);border-color:var(--card-border);border-radius:14px 14px 0 0;padding:16px 20px;">
+                <h6 class="mb-0 fw-bold" style="color:var(--primary);">
+                    <i class="fa-solid fa-chart-line me-2"></i>Detecciones por mes
+                </h6>
+            </div>
+            <div class="card-body p-3">
+                <canvas id="chart-temporal" style="max-height:240px;"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gráficas fila 2 -->
+<div class="row g-4">
+    <!-- Prioridades -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header" style="background:var(--table-head-bg);border-color:var(--card-border);border-radius:14px 14px 0 0;padding:16px 20px;">
+                <h6 class="mb-0 fw-bold" style="color:var(--primary);">
+                    <i class="fa-solid fa-layer-group me-2"></i>Por prioridad de recolección
+                </h6>
+            </div>
+            <div class="card-body p-3">
+                <canvas id="chart-prioridades" style="max-height:200px;"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confianza -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header" style="background:var(--table-head-bg);border-color:var(--card-border);border-radius:14px 14px 0 0;padding:16px 20px;">
+                <h6 class="mb-0 fw-bold" style="color:var(--primary);">
+                    <i class="fa-solid fa-gauge-high me-2"></i>Distribución de confianza IA
+                </h6>
+            </div>
+            <div class="card-body p-3">
+                <canvas id="chart-confianza" style="max-height:200px;"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<script>
+const isDark = () => document.documentElement.getAttribute('data-theme') === 'dark';
+const textColor = () => isDark() ? '#94a3b8' : '#6b7280';
+const gridColor = () => isDark() ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.font.size   = 12;
+
+// ── Materiales ───────────────────────────────────────────────
+fetch("{% url 'reportes_api_materiales' %}")
+    .then(r => r.json())
+    .then(d => {
+        new Chart(document.getElementById('chart-materiales'), {
+            type: 'doughnut',
+            data: {
+                labels:   d.labels,
+                datasets: [{
+                    data:            d.data,
+                    backgroundColor: d.colors,
+                    borderWidth:     2,
+                    borderColor:     isDark() ? '#1e293b' : '#fff',
+                    hoverOffset:     6,
+                }]
+            },
+            options: {
+                responsive: true,
+                cutout: '65%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: textColor(), padding: 12, boxWidth: 12 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` ${ctx.label}: ${ctx.parsed} residuos`
+                        }
+                    }
+                }
+            }
+        });
+    });
+
+// ── Temporal ─────────────────────────────────────────────────
+fetch("{% url 'reportes_api_temporal' %}")
+    .then(r => r.json())
+    .then(d => {
+        new Chart(document.getElementById('chart-temporal'), {
+            type: 'line',
+            data: {
+                labels:   d.labels,
+                datasets: [{
+                    label: 'Detecciones',
+                    data: d.data,
+                    borderColor: '#1b4332',
+                    backgroundColor: 'rgba(27,67,50,0.08)',
+                    borderWidth: 2.5,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#52b788',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 5,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: { ticks: { color: textColor() }, grid: { color: gridColor() } },
+                    y: { ticks: { color: textColor() }, grid: { color: gridColor() }, beginAtZero: true }
+                }
+            }
+        });
+    });
+
+// ── Prioridades ──────────────────────────────────────────────
+fetch("{% url 'reportes_api_prioridades' %}")
+    .then(r => r.json())
+    .then(d => {
+        new Chart(document.getElementById('chart-prioridades'), {
+            type: 'bar',
+            data: {
+                labels: d.labels,
+                datasets: [{
+                    label: 'Cantidad',
+                    data: d.data,
+                    backgroundColor: d.colors,
+                    borderRadius: 6,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: textColor() }, grid: { color: gridColor() }, beginAtZero: true },
+                    y: { ticks: { color: textColor() }, grid: { display: false } }
+                }
+            }
+        });
+    });
+
+// ── Confianza ────────────────────────────────────────────────
+fetch("{% url 'reportes_api_confianza' %}")
+    .then(r => r.json())
+    .then(d => {
+        new Chart(document.getElementById('chart-confianza'), {
+            type: 'bar',
+            data: {
+                labels: d.labels,
+                datasets: [{
+                    label: 'Imágenes',
+                    data: d.data,
+                    backgroundColor: ['#ef4444','#f59e0b','#3b82f6','#22c55e'],
+                    borderRadius: 6,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: textColor() }, grid: { display: false } },
+                    y: { ticks: { color: textColor() }, grid: { color: gridColor() }, beginAtZero: true }
+                }
+            }
+        });
+    });
+
+// Actualizar colores cuando cambia el tema
+document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    setTimeout(() => location.reload(), 250);
+});
+</script>
+{% endblock %}
