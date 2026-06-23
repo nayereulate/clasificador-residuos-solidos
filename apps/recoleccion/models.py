@@ -15,6 +15,8 @@ class Zona(models.Model):
     descripcion = models.TextField(blank=True, verbose_name='Descripción')
     color       = models.CharField(max_length=20, default='#1b4332', choices=COLOR_CHOICES,
                                    verbose_name='Color de identificación')
+    latitud     = models.FloatField(null=True, blank=True, verbose_name='Latitud')
+    longitud    = models.FloatField(null=True, blank=True, verbose_name='Longitud')
 
     class Meta:
         verbose_name        = 'Zona'

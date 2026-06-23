@@ -1,0 +1,25 @@
+# ByteTrack personalizado — seguimiento estable sin duplicados
+tracker_type: bytetrack
+
+# --- Umbrales de confianza ------------------------------------------------
+# Detecciones fuertes: asociación primaria + creación de nuevos tracks
+track_high_thresh: 0.20
+
+# Detecciones débiles: solo mantienen tracks EXISTENTES, no crean nuevos
+# Permite seguir objetos lejanos sin generar falsos positivos
+track_low_thresh: 0.08
+
+# Umbral mínimo para CREAR un nuevo track (más alto = menos falsos positivos)
+new_track_thresh: 0.25
+
+# --- Memoria ---------------------------------------------------------------
+# Frames que un track sobrevive sin ser detectado (~3 s a 30 fps con GPU)
+track_buffer: 90
+
+# --- Asociación -----------------------------------------------------------
+# IoU máximo para considerar dos dets el mismo objeto
+# 0.80 = bastante tolerante → mantiene IDs aunque el objeto se mueva rápido
+match_thresh: 0.80
+
+# Funde score de detección con IoU en la asignación → más preciso
+fuse_score: true

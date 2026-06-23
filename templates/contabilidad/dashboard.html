@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+{% block title %}Contabilidad{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h1 class="h4 fw-700 mb-0" style="color:var(--text-primary)">
+            <i class="fa-solid fa-coins me-2" style="color:#52b788"></i>Contabilidad
+        </h1>
+        <p class="text-muted small mb-0">Gestión financiera del ciclo de reciclaje</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'contabilidad:crear_ingreso' %}" class="btn btn-sm btn-success">
+            <i class="fa-solid fa-plus me-1"></i>Ingreso
+        </a>
+        <a href="{% url 'contabilidad:crear_egreso' %}" class="btn btn-sm btn-outline-danger">
+            <i class="fa-solid fa-minus me-1"></i>Egreso
+        </a>
+    </div>
+</div>
+
+<!-- KPIs del mes -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-xl-3">
+        <div class="card h-100 border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-3 p-3" style="background:rgba(82,183,136,0.15)">
+                        <i class="fa-solid fa-arrow-trend-up fa-lg" style="color:#52b788"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Ingresos este mes</div>
+                        <div class="h5 fw-700 mb-0">${{ total_ingresos_mes|floatformat:2 }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card h-100 border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-3 p-3" style="background:rgba(220,53,69,0.12)">
+                        <i class="fa-solid fa-arrow-trend-down fa-lg text-danger"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Egresos este mes</div>
+                        <div class="h5 fw-700 mb-0">${{ total_egresos_mes|floatformat:2 }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card h-100 border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-3 p-3" style="background:rgba(13,110,253,0.12)">
+                        <i class="fa-solid fa-scale-balanced fa-lg text-primary"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Utilidad del mes</div>
+                        <div class="h5 fw-700 mb-0 {% if utilidad_mes >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            ${{ utilidad_mes|floatformat:2 }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card h-100 border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-3 p-3" style="background:rgba(255,193,7,0.15)">
+                        <i class="fa-solid fa-chart-pie fa-lg text-warning"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Utilidad global</div>
+                        <div class="h5 fw-700 mb-0 {% if utilidad_global >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            ${{ utilidad_global|floatformat:2 }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gráficos -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-8">
+        <div class="card border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-body">
+                <h6 class="fw-600 mb-3">Ingresos vs Egresos (últimos 6 meses)</h6>
+                <canvas id="chartBarras" height="90"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-body">
+                <h6 class="fw-600 mb-3">Ingresos por Material</h6>
+                <canvas id="chartMaterial" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tablas recientes -->
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-header d-flex justify-content-between align-items-center" style="background:transparent;border-bottom:1px solid var(--table-border)">
+                <span class="fw-600">Últimos Ingresos</span>
+                <a href="{% url 'contabilidad:lista_ingresos' %}" class="btn btn-sm btn-outline-secondary">Ver todos</a>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0 small">
+                    <thead style="background:var(--table-head-bg)">
+                        <tr>
+                            <th class="ps-3">Fecha</th>
+                            <th>Material</th>
+                            <th class="text-end pe-3">Monto</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ing in ultimos_ingresos %}
+                        <tr>
+                            <td class="ps-3">{{ ing.fecha|date:"d/m/Y" }}</td>
+                            <td>{{ ing.material|default:ing.get_tipo_display }}</td>
+                            <td class="text-end pe-3 text-success fw-600">${{ ing.monto_total|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-center text-muted py-3">Sin ingresos aún</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-header d-flex justify-content-between align-items-center" style="background:transparent;border-bottom:1px solid var(--table-border)">
+                <span class="fw-600">Últimos Egresos</span>
+                <a href="{% url 'contabilidad:lista_egresos' %}" class="btn btn-sm btn-outline-secondary">Ver todos</a>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0 small">
+                    <thead style="background:var(--table-head-bg)">
+                        <tr>
+                            <th class="ps-3">Fecha</th>
+                            <th>Concepto</th>
+                            <th class="text-end pe-3">Monto</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for eg in ultimos_egresos %}
+                        <tr>
+                            <td class="ps-3">{{ eg.fecha|date:"d/m/Y" }}</td>
+                            <td>{{ eg.concepto }}</td>
+                            <td class="text-end pe-3 text-danger fw-600">${{ eg.monto|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-center text-muted py-3">Sin egresos aún</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const porMaterial = {{ por_material_json|safe }};
+const porCategoria = {{ por_categoria_json|safe }};
+const accentColor = '#52b788';
+const dangerColor = '#e74c3c';
+
+// Gráfico barras — carga datos desde API
+fetch("{% url 'contabilidad:api_grafico' %}")
+    .then(r => r.json())
+    .then(data => {
+        new Chart(document.getElementById('chartBarras'), {
+            type: 'bar',
+            data: {
+                labels: data.labels,
+                datasets: [
+                    { label: 'Ingresos', data: data.ingresos, backgroundColor: 'rgba(82,183,136,0.7)', borderRadius: 6 },
+                    { label: 'Egresos',  data: data.egresos,  backgroundColor: 'rgba(231,76,60,0.6)',  borderRadius: 6 },
+                ]
+            },
+            options: { responsive: true, plugins: { legend: { position: 'top' } } }
+        });
+    });
+
+// Gráfico circular — materiales
+if (Object.keys(porMaterial).length > 0) {
+    new Chart(document.getElementById('chartMaterial'), {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(porMaterial),
+            datasets: [{ data: Object.values(porMaterial),
+                backgroundColor: ['#52b788','#1b4332','#2d6a4f','#40916c','#74c69d','#95d5b2','#b7e4c7'] }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    });
+}
+</script>
+{% endblock %}

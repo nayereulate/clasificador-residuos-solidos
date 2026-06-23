@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}Egresos{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h1 class="h4 fw-700 mb-0"><i class="fa-solid fa-arrow-trend-down me-2 text-danger"></i>Egresos</h1>
+    <a href="{% url 'contabilidad:crear_egreso' %}" class="btn btn-danger btn-sm">
+        <i class="fa-solid fa-plus me-1"></i>Registrar Egreso
+    </a>
+</div>
+
+<div class="card border-0 mb-3" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-sm-3">
+                <label class="form-label small mb-1">Desde</label>
+                <input type="date" name="desde" value="{{ request.GET.desde }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-sm-3">
+                <label class="form-label small mb-1">Hasta</label>
+                <input type="date" name="hasta" value="{{ request.GET.hasta }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label small mb-1">Categoría</label>
+                <select name="categoria" class="form-select form-select-sm">
+                    <option value="">Todas</option>
+                    {% for val, label in categorias %}
+                    <option value="{{ val }}" {% if request.GET.categoria == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-2">
+                <button type="submit" class="btn btn-sm btn-primary w-100">Filtrar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead style="background:var(--table-head-bg)">
+                <tr>
+                    <th class="ps-3">Fecha</th>
+                    <th>Concepto</th>
+                    <th>Categoría</th>
+                    <th class="text-end">Monto</th>
+                    <th class="text-end pe-3">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for eg in egresos %}
+                <tr>
+                    <td class="ps-3">{{ eg.fecha|date:"d/m/Y" }}</td>
+                    <td>{{ eg.concepto }}</td>
+                    <td>{{ eg.categoria|default:"—" }}</td>
+                    <td class="text-end fw-600 text-danger">${{ eg.monto|floatformat:2 }}</td>
+                    <td class="text-end pe-3">
+                        <a href="{% url 'contabilidad:editar_egreso' eg.pk %}" class="btn btn-xs btn-outline-secondary me-1">
+                            <i class="fa-solid fa-pen"></i>
+                        </a>
+                        <form method="post" action="{% url 'contabilidad:eliminar_egreso' eg.pk %}" class="d-inline"
+                              onsubmit="return confirm('¿Eliminar este egreso?')">
+                            {% csrf_token %}
+                            <button class="btn btn-xs btn-outline-danger"><i class="fa-solid fa-trash"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-center text-muted py-4">No hay egresos registrados</td></tr>
+                {% endfor %}
+            </tbody>
+            {% if egresos %}
+            <tfoot style="background:var(--table-head-bg)">
+                <tr>
+                    <td colspan="3" class="ps-3 fw-600">Total</td>
+                    <td class="text-end fw-700 text-danger">${{ total|floatformat:2 }}</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+            {% endif %}
+        </table>
+    </div>
+</div>
+{% endblock %}

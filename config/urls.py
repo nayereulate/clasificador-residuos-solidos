@@ -12,6 +12,7 @@ urlpatterns = [
     path('', include('apps.historial.urls')),
     path('', include('apps.reportes.urls')),
     path('', include('apps.recoleccion.urls')),
+    path('', include('apps.contabilidad.urls')),
 ]
 
 if settings.DEBUG:

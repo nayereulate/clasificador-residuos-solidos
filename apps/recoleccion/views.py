@@ -1,3 +1,5 @@
+import json
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
@@ -38,14 +40,28 @@ def lista_rutas(request):
         'cancelada':  RutaRecoleccion.objects.filter(estado='cancelada').count(),
     }
 
+    zonas = Zona.objects.all()
+    zonas_json = json.dumps([
+        {
+            "id": z.pk,
+            "nombre": z.nombre,
+            "color": z.color,
+            "lat": z.latitud,
+            "lng": z.longitud,
+            "rutas": z.rutas.count(),
+        }
+        for z in zonas
+    ])
+
     return render(request, 'recoleccion/lista.html', {
-        'page_obj':  page_obj,
-        'estado':    estado,
-        'prioridad': prioridad,
-        'zona_id':   zona_id,
-        'q':         q,
-        'zonas':     Zona.objects.all(),
-        'totales':   totales,
+        'page_obj':   page_obj,
+        'estado':     estado,
+        'prioridad':  prioridad,
+        'zona_id':    zona_id,
+        'q':          q,
+        'zonas':      zonas,
+        'zonas_json': zonas_json,
+        'totales':    totales,
     })
 
 

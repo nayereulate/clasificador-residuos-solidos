@@ -115,6 +115,11 @@
             <i class="fa-solid fa-video me-1"></i> Cámara en vivo
         </button>
     </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-video" type="button">
+            <i class="fa-solid fa-film me-1"></i> Video
+        </button>
+    </li>
 </ul>
 
 <div class="tab-content">
@@ -458,6 +463,64 @@
         </div>
     </div>
 </div>
+
+<!-- TAB VIDEO ─────────────────────────────────────────────────── -->
+<div class="tab-pane fade" id="tab-video" role="tabpanel">
+    <div class="row g-4">
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-body p-4">
+                    <h5 class="section-title mb-3"><i class="fa-solid fa-film me-2"></i>Procesar Video con IA</h5>
+                    <p class="text-muted small">Sube un archivo de video. YOLO analizará un frame cada 10 fotogramas en un hilo paralelo sin bloquear la interfaz.</p>
+                    <div class="mb-3">
+                        <label class="form-label">Seleccionar video</label>
+                        <input type="file" id="input-video" accept="video/*" class="form-control">
+                    </div>
+                    <button id="btn-procesar-video" class="btn btn-success w-100 fw-semibold" onclick="iniciarVideo()">
+                        <i class="fa-solid fa-play me-2"></i>Iniciar Análisis
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-7">
+            <div class="card h-100">
+                <div class="card-body p-4">
+                    <h5 class="section-title mb-3"><i class="fa-solid fa-chart-bar me-2"></i>Estado del procesamiento</h5>
+                    <div id="video-estado-idle" class="text-center py-4" style="color:var(--text-muted)">
+                        <i class="fa-solid fa-film fa-2x mb-2" style="opacity:.3"></i>
+                        <p class="mb-0">Sube un video para comenzar.</p>
+                    </div>
+                    <div id="video-estado-running" class="d-none">
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span>Progreso</span>
+                                <span id="video-prog-text">0 / 0 frames</span>
+                            </div>
+                            <div class="progress" style="height:10px">
+                                <div id="video-prog-bar" class="progress-bar bg-success progress-bar-striped progress-bar-animated"
+                                     style="width:0%"></div>
+                            </div>
+                        </div>
+                        <div class="text-muted small" id="video-msg">Procesando en segundo plano…</div>
+                    </div>
+                    <div id="video-estado-done" class="d-none">
+                        <div class="alert alert-success py-2 mb-3">
+                            <i class="fa-solid fa-circle-check me-1"></i> Análisis completado
+                        </div>
+                        <div id="video-resultado"></div>
+                    </div>
+                    <div id="video-estado-error" class="d-none">
+                        <div class="alert alert-danger py-2">
+                            <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                            <span id="video-error-msg">Error en el procesamiento.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -481,7 +544,7 @@ inputImg?.addEventListener('change', e => {
 
 // (overlay slider eliminado — se muestran original y procesada lado a lado)
 
-// ─── Cámara en vivo ────────────────────────────────────────────────────────
+// ─── Cámara en vivo — ByteTrack ───────────────────────────────────────────
 const video         = document.getElementById('video-camara');
 const canvasCapture = document.getElementById('canvas-camara');
 const canvasOverlay = document.getElementById('overlay-canvas');
@@ -491,120 +554,65 @@ const btnGuardar    = document.getElementById('btn-guardar-analisis');
 const cameraStatus  = document.getElementById('camera-status');
 const captureCtx    = canvasCapture.getContext('2d');
 const overlayCtx    = canvasOverlay.getContext('2d');
-const apiUrl        = "{% url 'api_analizar_frame' %}";
 const csrfToken     = '{{ csrf_token }}';
 
-let stream = null, intervalId = null, processing = false, lastCapture = null;
-const ANALYSIS_MS = 900, MAX_W = 360, PERSIST_MS = 2800, SMOOTHING = 0.16;
-let trackCounter = 1, activeTracks = [], overlayRunning = false;
+// Endpoints
+const API_V2  = "{% url 'api_analizar_frame_v2' %}";  // ByteTrack
+const API_V1  = "{% url 'api_analizar_frame' %}";      // fallback
 
-function renderLista(id, data, empty) {
-    const el = document.getElementById(id);
-    el.innerHTML = '';
-    const keys = Object.keys(data || {});
-    if (!keys.length) { el.innerHTML = `<p class="text-muted mb-0 small">${empty}</p>`; return; }
-    const ul = document.createElement('ul');
-    ul.className = 'list-group list-group-flush';
-    keys.forEach(k => {
-        const li = document.createElement('li');
-        li.className = 'list-group-item d-flex justify-content-between px-0';
-        li.style = 'background:transparent;border-color:var(--divider);font-size:.78rem;padding:2px 0;';
-        li.innerHTML = `<span>${k}</span><span>${data[k]}</span>`;
-        ul.appendChild(li);
-    });
-    el.appendChild(ul);
+// ── Configuración de cámara ──────────────────────────────────────────────────
+const CAM_W       = 1280;   // resolución de captura
+const CAM_H       = 720;
+const CAPTURE_W   = 1280;   // resolución completa → objetos lejanos visibles para YOLO
+const ANALYSIS_MS = 500;    // con GPU RTX el análisis tarda <200ms → podemos ir rápido
+const PERSIST_MS  = 2500;   // tiempo de persistencia visual de tracks
+const SMOOTH      = 0.22;   // factor de interpolación de posición (0-1)
+
+let stream = null, intervalId = null, processing = false;
+let overlayRunning = false;
+
+// Track state: map track_id → {x1,y1,x2,y2, label, confianza, color, lastSeen}
+let trackMap = new Map();
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function escHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+function clearOverlay() {
+    overlayCtx.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
 }
-
-function clearOverlay() { overlayCtx.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height); }
 
 function resizeCanvases() {
     if (!video.videoWidth) return;
-    let w = video.videoWidth, h = video.videoHeight;
-    if (w > MAX_W) { const s = MAX_W / w; w = MAX_W; h = Math.round(h * s); }
-    canvasCapture.width = canvasOverlay.width = w;
+    const ratio = video.videoHeight / video.videoWidth;
+    const w = CAPTURE_W, h = Math.round(w * ratio);
+    canvasCapture.width  = canvasOverlay.width  = w;
     canvasCapture.height = canvasOverlay.height = h;
 }
 
-function iou(a, b) {
-    const ix1 = Math.max(a.x1,b.x1), iy1 = Math.max(a.y1,b.y1);
-    const ix2 = Math.min(a.x2,b.x2), iy2 = Math.min(a.y2,b.y2);
-    const inter = Math.max(0,ix2-ix1)*Math.max(0,iy2-iy1);
-    const ua = (a.x2-a.x1)*(a.y2-a.y1), ub = (b.x2-b.x1)*(b.y2-b.y1);
-    return (ua+ub-inter) > 0 ? inter/(ua+ub-inter) : 0;
+function renderLista(id, data, empty) {
+    const el   = document.getElementById(id);
+    const keys = Object.keys(data || {});
+    if (!keys.length) { el.innerHTML = `<p class="text-muted mb-0 small">${empty}</p>`; return; }
+    el.innerHTML = keys
+        .sort((a, b) => data[b] - data[a])
+        .map(k => `<div class="d-flex justify-content-between"
+                        style="font-size:.78rem;padding:2px 0;border-bottom:1px solid var(--divider);">
+                     <span>${escHtml(k)}</span>
+                     <span class="badge-eco">${data[k]}</span>
+                   </div>`)
+        .join('');
 }
 
-function findTrack(box) {
-    let best = null, bestScore = 0;
-    activeTracks.forEach(t => {
-        if (t.label !== box.label) return;
-        const score = iou(t, box);
-        if (score > bestScore) { bestScore = score; best = t; }
-    });
-    return bestScore >= 0.05 ? best : null;
+function renderLive(r) {
+    document.getElementById('cam-objeto').textContent    = r.objeto_principal || '–';
+    document.getElementById('cam-material').textContent  = r.material_predominante || '–';
+    document.getElementById('cam-total').textContent     = r.total_unicos ?? r.cantidad_total ?? 0;
+    document.getElementById('cam-confianza').textContent = Number(r.confianza || 0).toFixed(2);
+    renderLista('cam-objetos',    r.conteo_unico || r.objetos || {}, 'Sin detecciones');
+    renderLista('cam-materiales', r.materiales || {}, 'Sin materiales');
 }
-
-function updateTracks(boxes) {
-    const now = Date.now();
-    boxes.forEach(box => {
-        const t = findTrack(box);
-        if (t) {
-            ['x1','y1','x2','y2'].forEach(k => t[k] += (box[k]-t[k])*SMOOTHING);
-            t.label = box.label; t.confianza = box.confianza;
-            t.material = box.material; t.color = box.color; t.lastSeen = now;
-        } else {
-            activeTracks.push({ id: trackCounter++, ...box, lastSeen: now });
-        }
-    });
-    activeTracks = activeTracks.filter(t => Date.now()-t.lastSeen <= PERSIST_MS);
-}
-
-function drawOverlay() {
-    if (!overlayRunning) return;
-    const now = Date.now();
-    clearOverlay();
-    activeTracks.forEach(t => {
-        const life = Math.max(0, 1-(Date.now()-t.lastSeen)/PERSIST_MS);
-        if (life <= 0) return;
-        const alpha = Math.max(0.38, life);
-        const x = t.x1, y = t.y1, w = t.x2-t.x1, h = t.y2-t.y1;
-        const color = t.color || '#00ff00';
-        overlayCtx.save();
-        overlayCtx.globalAlpha = alpha;
-        overlayCtx.strokeStyle = color; overlayCtx.lineWidth = 4;
-        overlayCtx.shadowColor = color; overlayCtx.shadowBlur = 8;
-        overlayCtx.strokeRect(x,y,w,h);
-        overlayCtx.shadowBlur = 0;
-        const label = `${t.label} ${Number(t.confianza||0).toFixed(2)}`;
-        overlayCtx.font = 'bold 14px Inter,Arial';
-        const tw = overlayCtx.measureText(label).width;
-        const lh = 24, ly = y-lh-4 < 0 ? y+4 : y-lh-4;
-        overlayCtx.fillStyle = color; overlayCtx.fillRect(x, ly, tw+14, lh);
-        overlayCtx.fillStyle = '#fff'; overlayCtx.fillText(label, x+7, ly+17);
-        overlayCtx.restore();
-    });
-    if (!activeTracks.length) {
-        overlayCtx.save(); overlayCtx.fillStyle = 'rgba(255,255,255,.8)';
-        overlayCtx.font = 'bold 18px Inter,Arial';
-        overlayCtx.fillText('Sin detecciones', 16, 30); overlayCtx.restore();
-    }
-    requestAnimationFrame(drawOverlay);
-}
-
-function renderLive(r, showImg=false) {
-    document.getElementById('cam-objeto').textContent = r.objeto_principal||'–';
-    document.getElementById('cam-material').textContent = r.material_predominante||'–';
-    document.getElementById('cam-total').textContent = r.cantidad_total||0;
-    document.getElementById('cam-confianza').textContent = Number(r.confianza||0).toFixed(2);
-    renderLista('cam-objetos', r.objetos||{}, 'Sin detecciones');
-    renderLista('cam-materiales', r.materiales||{}, 'Sin materiales');
-    const imgEl = document.getElementById('cam-img-proc');
-    if (showImg && r.imagen_procesada) { imgEl.src = r.imagen_procesada; imgEl.classList.remove('d-none'); }
-}
-
-function escHtml(t) { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
 
 function addHistoryCard(r) {
-    const objetos = r.resultado_json?.objetos||{};
     const container = document.getElementById('historial-container');
     const div = document.createElement('div');
     div.className = 'card mb-3 border-0';
@@ -613,71 +621,223 @@ function addHistoryCard(r) {
         <div class="card-body p-3">
             <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
                 <div>
-                    <h6 class="mb-1 fw-semibold">${escHtml(r.tipo||'Sin nombre')}</h6>
-                    <div class="text-muted" style="font-size:.75rem;">${escHtml(r.fecha||'')}</div>
+                    <h6 class="mb-1 fw-semibold">${escHtml(r.tipo || 'Sin nombre')}</h6>
+                    <span class="text-muted" style="font-size:.75rem;">${escHtml(r.fecha || '')}</span>
                 </div>
                 <div>
-                    <span class="pill">${escHtml(r.categoria||'')}</span>
-                    <span class="pill">Conf: ${Number(r.confianza||0).toFixed(2)}</span>
+                    <span class="pill">${escHtml(r.categoria || '')}</span>
+                    <span class="pill">Conf: ${Number(r.confianza || 0).toFixed(2)}</span>
                 </div>
             </div>
             <div class="row g-2">
-                <div class="col-md-6">
-                    <div class="img-box" style="min-height:120px;">
-                        <img src="${escHtml(r.imagen_url)}" alt="Original">
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="img-box" style="min-height:120px;">
-                        ${r.resultado_json?.imagen_procesada
-                            ? `<img src="${escHtml(r.resultado_json.imagen_procesada)}" alt="Procesada">`
-                            : '<span class="text-muted small">Sin imagen</span>'}
-                    </div>
-                </div>
+                <div class="col-6"><div class="img-box"><img src="${escHtml(r.imagen_url)}" alt="Original"></div></div>
+                <div class="col-6"><div class="img-box">
+                    ${r.resultado_json?.imagen_procesada
+                        ? `<img src="${escHtml(r.resultado_json.imagen_procesada)}" alt="Procesada">`
+                        : '<span class="text-muted small">Sin imagen</span>'}
+                </div></div>
             </div>
         </div>`;
     container.insertAdjacentElement('afterbegin', div);
 }
 
-async function sendFrame(save=false) {
+// ── Colores y estilos por estado ──────────────────────────────────────────────
+const ESTADO_STYLE = {
+    detectado:  { color: '#52b788', dash: [],      alpha: 1.00, lineW: 3 },  // verde sólido
+    detectando: { color: '#38bdf8', dash: [6, 3],  alpha: 0.90, lineW: 2 },  // azul discontinuo
+    predictado: { color: '#f59e0b', dash: [4, 4],  alpha: 0.70, lineW: 2 },  // naranja discontinuo
+};
+
+// ── NMS cliente: elimina cajas redundantes antes de dibujar ──────────────────
+function iouBoxes(a, b) {
+    const ix1 = Math.max(a.x1, b.x1), iy1 = Math.max(a.y1, b.y1);
+    const ix2 = Math.min(a.x2, b.x2), iy2 = Math.min(a.y2, b.y2);
+    const inter = Math.max(0, ix2-ix1) * Math.max(0, iy2-iy1);
+    const ua = (a.x2-a.x1)*(a.y2-a.y1), ub = (b.x2-b.x1)*(b.y2-b.y1);
+    return (ua+ub-inter) > 0 ? inter/(ua+ub-inter) : 0;
+}
+function clientNMS(boxes, thresh = 0.50) {
+    const sorted = [...boxes].sort((a,b) => (b.confianza||0) - (a.confianza||0));
+    const keep = [], sup = new Set();
+    sorted.forEach((box, i) => {
+        if (sup.has(i)) return;
+        keep.push(box);
+        sorted.forEach((other, j) => {
+            if (j > i && !sup.has(j) && iouBoxes(box, other) > thresh) sup.add(j);
+        });
+    });
+    return keep;
+}
+
+// ── Track state management (cliente — suavizado de posición) ──────────────────
+function updateTrackMap(boxes) {
+    const now = Date.now();
+
+    boxes.forEach(box => {
+        const tid = box.track_id != null ? box.track_id
+                                         : `x${Math.round(box.x1/20)}_${Math.round(box.y1/20)}`;
+        if (trackMap.has(tid)) {
+            const t = trackMap.get(tid);
+            // Interpolar más fuerte si viene del servidor (detectado/detectando)
+            // Menos fuerte si es predicho (ya viene con inercia del servidor)
+            const s = (box.estado === 'predictado') ? SMOOTH * 0.5 : SMOOTH;
+            ['x1','y1','x2','y2'].forEach(k => t[k] += (box[k] - t[k]) * s);
+            t.label     = box.clase_dominante || box.label || box.nombre || '?';
+            t.confianza = box.confianza_promedio ?? box.confianza ?? 0;
+            t.color     = box.color || ESTADO_STYLE[box.estado]?.color || '#52b788';
+            t.estado    = box.estado || 'detectado';
+            t.lastSeen  = now;
+            t.fsd       = box.frames_sin_deteccion || 0;
+        } else {
+            trackMap.set(tid, {
+                ...box,
+                label:    box.clase_dominante || box.label || box.nombre || '?',
+                confianza: box.confianza_promedio ?? box.confianza ?? 0,
+                estado:   box.estado || 'detectado',
+                lastSeen: now,
+                fsd:      box.frames_sin_deteccion || 0,
+            });
+        }
+    });
+
+    // Eliminar del mapa cliente solo tracks que ya no llegan del servidor
+    // y han expirado su PERSIST_MS local
+    trackMap.forEach((t, tid) => {
+        if (now - t.lastSeen > PERSIST_MS) trackMap.delete(tid);
+    });
+}
+
+// ── Render loop (RAF) ─────────────────────────────────────────────────────────
+function drawOverlay() {
+    if (!overlayRunning) return;
+    clearOverlay();
+    const now = Date.now();
+
+    if (!trackMap.size) {
+        overlayCtx.save();
+        overlayCtx.fillStyle = 'rgba(255,255,255,.65)';
+        overlayCtx.font = 'bold 15px Inter,Arial';
+        overlayCtx.fillText('Sin detecciones', 12, 28);
+        overlayCtx.restore();
+        requestAnimationFrame(drawOverlay);
+        return;
+    }
+
+    trackMap.forEach((t, tid) => {
+        const age    = now - t.lastSeen;
+        const style  = ESTADO_STYLE[t.estado] || ESTADO_STYLE.detectado;
+        // Alpha base del estado × decaimiento temporal suave
+        const alpha  = style.alpha * Math.max(0.30, 1 - age / PERSIST_MS);
+        const color  = t.color || style.color;
+        const x = t.x1, y = t.y1, w = t.x2 - t.x1, h = t.y2 - t.y1;
+
+        overlayCtx.save();
+        overlayCtx.globalAlpha = alpha;
+
+        // ── Caja ──────────────────────────────────────────────────────────
+        overlayCtx.strokeStyle = color;
+        overlayCtx.lineWidth   = style.lineW;
+        overlayCtx.setLineDash(style.dash);
+
+        if (t.estado === 'detectado') {
+            overlayCtx.shadowColor = color;
+            overlayCtx.shadowBlur  = 8;
+        }
+        overlayCtx.strokeRect(x, y, w, h);
+        overlayCtx.shadowBlur = 0;
+        overlayCtx.setLineDash([]);
+
+        // ── Etiqueta ──────────────────────────────────────────────────────
+        const tid_str   = typeof tid === 'number' ? ` #${tid}` : '';
+        const conf_str  = t.estado !== 'detectando'
+                          ? ` ${Number(t.confianza || 0).toFixed(2)}`
+                          : '';
+        // Predichos: mostrar "?" si clase es desconocida, sino clase + "(~)"
+        let label_text  = t.label || '?';
+        if (t.estado === 'predictado')  label_text += ' (~)';
+        if (t.estado === 'detectando')  label_text = 'Detectando...';
+        const label     = `${label_text}${conf_str}${tid_str}`.trim();
+
+        overlayCtx.font = `bold 13px Inter,Arial`;
+        const tw = overlayCtx.measureText(label).width;
+        const lh = 21;
+        const ly = y - lh - 3 < 0 ? y + 3 : y - lh - 3;
+
+        // Fondo de etiqueta semitransparente
+        overlayCtx.globalAlpha = alpha * 0.88;
+        overlayCtx.fillStyle   = color;
+        overlayCtx.beginPath();
+        overlayCtx.roundRect?.(x, ly, tw + 14, lh, 4) || overlayCtx.fillRect(x, ly, tw + 14, lh);
+        overlayCtx.fill();
+
+        overlayCtx.globalAlpha = alpha;
+        overlayCtx.fillStyle   = '#fff';
+        overlayCtx.fillText(label, x + 7, ly + 15);
+
+        overlayCtx.restore();
+    });
+
+    requestAnimationFrame(drawOverlay);
+}
+
+// ── Captura y análisis ────────────────────────────────────────────────────────
+async function sendFrame(save = false, resetTracker = false) {
     if (!stream || processing || !video.videoWidth) return;
     processing = true;
     cameraStatus.textContent = save ? 'Guardando…' : 'Analizando…';
     resizeCanvases();
     captureCtx.drawImage(video, 0, 0, canvasCapture.width, canvasCapture.height);
-    const b64 = canvasCapture.toDataURL('image/jpeg', 0.68);
-    lastCapture = b64;
+    const b64 = canvasCapture.toDataURL('image/jpeg', 0.88); // más calidad → mejor detección lejana
+
     try {
-        const r = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
-            body: JSON.stringify({ image: b64, guardar: save }),
+        const resp = await fetch(API_V2, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            body:    JSON.stringify({ image: b64, guardar: save, reset: resetTracker }),
         });
-        const data = await r.json();
-        if (!data.ok) { cameraStatus.textContent = 'Error al analizar'; return; }
+        const data = await resp.json();
+        if (!data.ok) { cameraStatus.textContent = 'Error: ' + (data.error || ''); return; }
+
         const res = data.resultado;
-        renderLive(res, save);
-        updateTracks(res.boxes||[]);
-        cameraStatus.textContent = save ? 'Análisis guardado.' : 'Cámara activa.';
+        renderLive(res);
+        updateTrackMap(clientNMS(res.boxes || [], 0.50));
+
+        cameraStatus.textContent = save ? 'Guardado.' : `Activa · ${res.total_unicos ?? 0} únicos · ${res.tracks_activos ?? 0} tracks`;
         if (save && res.guardado && res.residuo) addHistoryCard(res.residuo);
-    } catch { cameraStatus.textContent = 'Error de conexión'; }
-    finally { processing = false; }
+    } catch (e) {
+        cameraStatus.textContent = 'Error de conexión';
+    } finally {
+        processing = false;
+    }
 }
 
+// ── Botones ───────────────────────────────────────────────────────────────────
 btnIniciar?.addEventListener('click', async () => {
     try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('Cámara no soportada.');
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal:'environment' } }, audio: false });
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width:       { ideal: CAM_W },
+                height:      { ideal: CAM_H },
+                facingMode:  { ideal: 'environment' },
+                frameRate:   { ideal: 30 },
+            },
+            audio: false,
+        });
         video.srcObject = stream;
         await video.play();
         resizeCanvases();
-        btnIniciar.disabled = true; btnDetener.disabled = false; btnGuardar.disabled = false;
-        cameraStatus.textContent = 'Cámara iniciada.';
+        trackMap.clear();
+        btnIniciar.disabled = true;
+        btnDetener.disabled = false;
+        btnGuardar.disabled = false;
         overlayRunning = true;
         requestAnimationFrame(drawOverlay);
+        // reset=true en el primer frame para limpiar ByteTrack del servidor
+        await sendFrame(false, true);
         intervalId = setInterval(() => sendFrame(false), ANALYSIS_MS);
-        setTimeout(() => sendFrame(false), 250);
-    } catch(e) {
+        cameraStatus.textContent = 'Cámara iniciada (1280×720 · ByteTrack).';
+    } catch (e) {
         alert('Error al iniciar cámara:\n' + e.message);
         cameraStatus.textContent = 'Error al iniciar cámara.';
     }
@@ -686,11 +846,13 @@ btnIniciar?.addEventListener('click', async () => {
 btnDetener?.addEventListener('click', () => {
     clearInterval(intervalId); intervalId = null;
     stream?.getTracks().forEach(t => t.stop()); stream = null;
-    video.srcObject = null; overlayRunning = false; clearOverlay();
-    activeTracks = []; processing = false; lastCapture = null;
+    video.srcObject = null;
+    overlayRunning = false; clearOverlay();
+    trackMap.clear(); processing = false;
     btnIniciar.disabled = false; btnDetener.disabled = true; btnGuardar.disabled = true;
     ['cam-objeto','cam-material','cam-total','cam-confianza'].forEach(id => {
-        document.getElementById(id).textContent = id.includes('total') || id.includes('confianza') ? '0' : '–';
+        const el = document.getElementById(id);
+        if (el) el.textContent = id.includes('total') || id.includes('confianza') ? '0' : '–';
     });
     cameraStatus.textContent = 'Cámara detenida.';
 });
@@ -699,5 +861,86 @@ btnGuardar?.addEventListener('click', async () => {
     if (!stream) { alert('Primero inicia la cámara.'); return; }
     await sendFrame(true);
 });
+</script>
+
+<script>
+// ─── Video processing ─────────────────────────────────────────────────────
+let videoPollInterval = null;
+
+async function iniciarVideo() {
+    const input = document.getElementById('input-video');
+    if (!input.files.length) { alert('Selecciona un archivo de video primero.'); return; }
+
+    const fd = new FormData();
+    fd.append('video', input.files[0]);
+    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    document.getElementById('video-estado-idle').classList.add('d-none');
+    document.getElementById('video-estado-done').classList.add('d-none');
+    document.getElementById('video-estado-error').classList.add('d-none');
+    document.getElementById('video-estado-running').classList.remove('d-none');
+    document.getElementById('btn-procesar-video').disabled = true;
+
+    try {
+        const r = await fetch("{% url 'api_procesar_video' %}", { method: 'POST', body: fd });
+        const data = await r.json();
+        if (!data.ok) throw new Error(data.error || 'Error al enviar video');
+        videoPollInterval = setInterval(pollVideoEstado, 1500);
+    } catch(e) {
+        mostrarErrorVideo(e.message);
+    }
+}
+
+async function pollVideoEstado() {
+    try {
+        const r = await fetch("{% url 'api_estado_video' %}");
+        const data = await r.json();
+
+        const total = data.frames_total || 1;
+        const done  = data.frames_procesados || 0;
+        const pct   = Math.round((done / total) * 100);
+
+        document.getElementById('video-prog-bar').style.width = pct + '%';
+        document.getElementById('video-prog-text').textContent = `${done} / ${total} frames`;
+        document.getElementById('video-msg').textContent =
+            `Frames con detección: ${data.frames_con_deteccion || 0}`;
+
+        if (data.error_fatal) {
+            clearInterval(videoPollInterval);
+            mostrarErrorVideo(data.error_fatal);
+            return;
+        }
+
+        if (!data.running && done > 0) {
+            clearInterval(videoPollInterval);
+            mostrarResultadoVideo(data.resultado);
+        }
+    } catch(e) { /* red, reintentar */ }
+}
+
+function mostrarResultadoVideo(res) {
+    document.getElementById('video-estado-running').classList.add('d-none');
+    document.getElementById('video-estado-done').classList.remove('d-none');
+    document.getElementById('btn-procesar-video').disabled = false;
+
+    const objetos = res.materiales_encontrados || {};
+    let html = `<p class="mb-2"><strong>Objeto más frecuente:</strong> ${res.objeto_mas_frecuente || '—'}</p>
+                <p class="mb-2"><strong>Total objetos detectados:</strong> ${res.total_objetos || 0}</p>`;
+    if (Object.keys(objetos).length) {
+        html += '<ul class="list-unstyled mb-0 small">';
+        for (const [k,v] of Object.entries(objetos).sort((a,b) => b[1]-a[1])) {
+            html += `<li><span class="badge bg-success-subtle text-success me-1">${v}</span>${k}</li>`;
+        }
+        html += '</ul>';
+    }
+    document.getElementById('video-resultado').innerHTML = html;
+}
+
+function mostrarErrorVideo(msg) {
+    document.getElementById('video-estado-running').classList.add('d-none');
+    document.getElementById('video-estado-error').classList.remove('d-none');
+    document.getElementById('video-error-msg').textContent = msg;
+    document.getElementById('btn-procesar-video').disabled = false;
+}
 </script>
 {% endblock %}

@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="es" data-theme="light">
 <head>
@@ -630,8 +631,28 @@
 
         {% block extra_css %}{% endblock %}
     </style>
+    <style>
+        .eco-accesibilidad { position:fixed; bottom:20px; right:20px; display:flex; flex-direction:column; gap:8px; z-index:9999; }
+        .eco-btn-acc { width:48px; height:48px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; font-size:18px; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,0.3); transition:all 0.2s; }
+        .eco-btn-acc:hover { transform:scale(1.1); }
+        .eco-btn-acc:focus { outline:3px solid #52b788; outline-offset:2px; }
+        .eco-btn-acc:disabled { opacity:0.4!important; cursor:not-allowed!important; transform:none!important; }
+        .eco-btn-acc.activo { background:#52b788!important; color:white!important; }
+        .eco-btn-acc-tts,.eco-btn-acc-mic,.eco-btn-acc-leer { background:#1b4332; color:#52b788; }
+        .eco-voz-indicator { position:fixed; bottom:218px; right:20px; background:rgba(27,67,50,0.95); color:#52b788; padding:8px 14px; border-radius:20px; font-size:0.78rem; display:none; align-items:center; gap:8px; z-index:9999; max-width:280px; border:1px solid rgba(82,183,136,0.3); pointer-events:none; }
+        .eco-voz-indicator.visible { display:flex; }
+        .eco-pulse { width:8px; height:8px; background:#52b788; border-radius:50%; flex-shrink:0; animation:ecoPulse 1s infinite; }
+        @keyframes ecoPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} }
+        body.alto-contraste { filter:contrast(150%) brightness(110%); }
+        body.texto-grande { font-size:1.1rem!important; }
+        .skip-link { position:absolute; top:-40px; left:6px; background:#1b4332; color:#52b788; padding:8px 14px; border-radius:4px; text-decoration:none; font-size:0.85rem; font-weight:600; z-index:10000; transition:top 0.2s; }
+        .skip-link:focus { top:6px; }
+    </style>
 </head>
 <body>
+
+<!-- Skip link para navegación por teclado -->
+<a href="#main-content" class="skip-link">Saltar al contenido principal</a>
 
 <!-- Overlay (mobile) -->
 <div class="sb-overlay" id="sb-overlay"></div>
@@ -651,7 +672,7 @@
     </a>
 
     <!-- Navigation -->
-    <nav class="sb-nav">
+    <nav class="sb-nav" role="navigation" aria-label="Menú principal">
 
         <div class="sb-section">Clasificación</div>
         <a href="{% url 'inicio' %}" class="sb-link {% block nav_inicio %}{% endblock %}">
@@ -671,6 +692,12 @@
         <a href="{% url 'historial' %}" class="sb-link {% block nav_historial %}{% endblock %}">
             <i class="fa-solid fa-clock-rotate-left sb-icon"></i>
             Historial
+        </a>
+
+        <div class="sb-section">Finanzas</div>
+        <a href="{% url 'contabilidad:dashboard' %}" class="sb-link {% if 'contabilidad' in request.path %}active{% endif %}">
+            <i class="fa-solid fa-coins sb-icon"></i>
+            Contabilidad
         </a>
 
         <div class="sb-section">Gestión</div>
@@ -813,7 +840,7 @@
     {% endif %}
 
     <!-- Page content -->
-    <main class="page-content">
+    <main class="page-content" id="main-content" role="main">
         {% block content %}{% endblock %}
     </main>
 
@@ -857,6 +884,59 @@
 </script>
 
 {% block extra_js %}{% endblock %}
+
+<!-- ═══════════════════════════════════════════════════════
+     PANEL DE ACCESIBILIDAD FLOTANTE
+═══════════════════════════════════════════════════════ -->
+<div class="eco-accesibilidad" role="complementary" aria-label="Controles de accesibilidad">
+    <button class="eco-btn-acc eco-btn-acc-leer" id="btnLeerPagina"
+            onclick="EcoVoz.leerPagina()"
+            title="Leer página completa (Alt+R)"
+            aria-label="Leer página completa"
+            aria-pressed="false">
+        <i class="fa-solid fa-book-open-reader" aria-hidden="true"></i>
+    </button>
+    <button class="eco-btn-acc eco-btn-acc-mic" id="btnMicrofono"
+            onclick="EcoComandos.toggle()"
+            title="Comandos de voz (Alt+M)"
+            aria-label="Activar comandos de voz"
+            aria-pressed="false">
+        <i class="fa-solid fa-microphone" aria-hidden="true"></i>
+    </button>
+    <button class="eco-btn-acc eco-btn-acc-tts" id="btnTTS"
+            onclick="EcoVoz.toggle()"
+            title="Lector de pantalla (Alt+V)"
+            aria-label="Activar lector de pantalla"
+            aria-pressed="false">
+        <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
+    </button>
+</div>
+
+<!-- Indicador de estado de voz -->
+<div class="eco-voz-indicator" id="ecoVozIndicator" aria-live="polite" aria-atomic="true">
+    <div class="eco-pulse" aria-hidden="true"></div>
+    <span id="ecoVozTexto">Escuchando...</span>
+</div>
+
+<!-- Script de accesibilidad -->
+<script src="{% static 'js/accessibility.js' %}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Inicializar TTS y comandos de voz
+        EcoVoz.init();
+        EcoComandos.init();
+
+        // Leer automáticamente mensajes Django (toasts) si TTS está activo
+        document.querySelectorAll('.toast-body').forEach(function (el) {
+            if (EcoVoz.activo) EcoVoz.hablar(el.innerText.trim());
+        });
+
+        // Leer alertas Bootstrap si las hay
+        document.querySelectorAll('.alert').forEach(function (el) {
+            if (EcoVoz.activo) EcoVoz.hablar(el.innerText.trim());
+        });
+    });
+</script>
 
 </body>
 </html>

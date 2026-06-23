@@ -4,8 +4,13 @@ from datetime import datetime
 import re
 
 import cv2
+import numpy as np
+import torch
 from django.conf import settings
 from ultralytics import YOLO
+
+# GPU si está disponible — se aplica en todas las llamadas de tracking
+_DEVICE = 0 if torch.cuda.is_available() else "cpu"
 
 # =========================================================
 # MODELO
@@ -316,3 +321,86 @@ def detectar_objetos(ruta_imagen, nombre_base=None, imgsz=640, guardar_imagen=Tr
         "cantidad_total": total,
         "imagen_procesada": imagen_procesada,
     }
+
+
+# =========================================================
+# TRACKING (ByteTrack)
+# =========================================================
+
+# Configuración de tracking — ajustar aquí sin tocar el resto del código
+TRACKING_CONF  = 0.20   # conf al modelo: ByteTrack refinará internamente
+TRACKING_IMGSZ = 1280  # alta resolución → detecta objetos pequeños/lejanos
+TRACKING_IOU   = 0.45  # NMS IoU: agresivo para eliminar cajas duplicadas
+
+
+def detectar_con_track(frame: np.ndarray,
+                        conf: float = TRACKING_CONF,
+                        imgsz: int  = TRACKING_IMGSZ,
+                        iou: float  = TRACKING_IOU) -> list:
+    """
+    Detecta y rastrea objetos en un frame numpy (BGR) usando ByteTrack.
+
+    - persist=True  → el tracker recuerda IDs entre frames
+    - half=True     → FP16 en GPU (más rápido, igual precisión)
+    - iou=0.45      → NMS agresivo: elimina cajas duplicadas del mismo objeto
+    """
+    from .tracker_service import BYTETRACK_YAML
+    model = _cargar_modelo()
+
+    results = model.track(
+        source=frame,
+        persist=True,
+        tracker=BYTETRACK_YAML,
+        conf=conf,
+        iou=iou,
+        imgsz=imgsz,
+        device=_DEVICE,
+        half=torch.cuda.is_available(),   # FP16 solo si hay GPU
+        verbose=False,
+    )
+
+    detecciones = []
+    for r in results:
+        if r.boxes is None:
+            continue
+
+        nombres_clase = r.names
+        ids = r.boxes.id  # tensor o None cuando no hay tracks asignados
+
+        for i, box in enumerate(r.boxes):
+            clase_id          = int(box.cls[0])
+            nombre_original   = str(nombres_clase[clase_id]).strip()
+            nombre_normalizado = _normalizar(nombre_original)
+
+            if nombre_normalizado in IGNORAR:
+                continue
+
+            confianza  = float(box.conf[0])
+            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+            nombre_es  = _traducir(nombre_original)
+            track_id   = int(ids[i].item()) if ids is not None else None
+
+            detecciones.append({
+                "track_id": track_id,
+                "nombre":   nombre_es,
+                "confianza": round(confianza, 4),
+                "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                "color": "#00c853",
+            })
+
+    return detecciones
+
+
+def reset_tracker():
+    """
+    Reinicia el estado interno del tracker ByteTrack.
+    Llamar al iniciar una nueva sesión de cámara.
+    """
+    global _MODEL
+    if _MODEL is not None:
+        try:
+            # Ultralytics almacena el tracker en predictor; borrarlo fuerza reinicio
+            if hasattr(_MODEL, "predictor") and _MODEL.predictor is not None:
+                _MODEL.predictor = None
+        except Exception:
+            pass

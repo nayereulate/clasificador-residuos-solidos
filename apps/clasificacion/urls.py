@@ -1,7 +1,8 @@
 from django.urls import path
 
 # Módulo 1 – vistas existentes (sin cambios)
-from .views import inicio, api_analizar_frame
+from .views import (inicio, api_analizar_frame, api_analizar_frame_v2,
+                    api_procesar_video, api_estado_video)
 
 # Módulo 2 – Administración
 from .views_admin import (
@@ -16,7 +17,10 @@ from .views_admin import (
 urlpatterns = [
     # ── Módulo 1 (intacto) ────────────────────────────────────────────────
     path("", inicio, name="inicio"),
-    path("api/analizar-frame/", api_analizar_frame, name="api_analizar_frame"),
+    path("api/analizar-frame/",    api_analizar_frame,    name="api_analizar_frame"),
+    path("api/analizar-frame/v2/", api_analizar_frame_v2, name="api_analizar_frame_v2"),
+    path("api/procesar-video/",  api_procesar_video,  name="api_procesar_video"),
+    path("api/estado-video/",    api_estado_video,    name="api_estado_video"),
 
     # ── Módulo 2 – Administración ─────────────────────────────────────────
     path("administracion/",                        admin_dashboard,     name="admin_dashboard"),
