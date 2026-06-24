@@ -18,7 +18,10 @@ def dashboard(request):
     total      = Residuo.objects.count()
     analizados = ResultadoAdministracion.objects.count()
     pendientes = total - analizados
-    alertas    = sum(len(r.alertas) for r in ResultadoAdministracion.objects.only('alertas'))
+    alertas    = sum(
+        len(r["alertas"]) for r in ResultadoAdministracion.objects.values("alertas")
+        if r["alertas"]
+    )
 
     return render(request, 'reportes/dashboard.html', {
         'total':      total,
@@ -33,8 +36,8 @@ def dashboard(request):
 @login_required
 def api_materiales(request):
     data = defaultdict(int)
-    for r in ResultadoAdministracion.objects.all():
-        data[r.material_predominante] += 1
+    for row in ResultadoAdministracion.objects.values("material_predominante").annotate(total=Count("id")):
+        data[row["material_predominante"]] = row["total"]
 
     colores = {
         'Metal':        '#6b7280',
@@ -87,8 +90,8 @@ def api_prioridades(request):
 def api_confianza(request):
     """Distribución de confianza por rangos (0-25%, 25-50%, 50-75%, 75-100%)."""
     rangos  = {'0–25%': 0, '25–50%': 0, '50–75%': 0, '75–100%': 0}
-    for r in Residuo.objects.only('confianza'):
-        c = r.confianza * 100
+    for row in Residuo.objects.values_list('confianza', flat=True):
+        c = (row or 0) * 100
         if   c < 25:  rangos['0–25%']   += 1
         elif c < 50:  rangos['25–50%']  += 1
         elif c < 75:  rangos['50–75%']  += 1
@@ -167,8 +170,8 @@ def exportar_excel(request):
     ws2 = wb.create_sheet('Materiales')
 
     material_data = defaultdict(int)
-    for a in ResultadoAdministracion.objects.all():
-        material_data[a.material_predominante] += 1
+    for row in ResultadoAdministracion.objects.values("material_predominante").annotate(total=Count("id")):
+        material_data[row["material_predominante"]] = row["total"]
 
     ws2.cell(1, 1, 'Material').font       = header_font
     ws2.cell(1, 1).fill                   = header_fill
@@ -216,8 +219,8 @@ def imprimir_reporte(request):
     pendientes = total - analizados
 
     material_data = defaultdict(int)
-    for a in ResultadoAdministracion.objects.all():
-        material_data[a.material_predominante] += 1
+    for row in ResultadoAdministracion.objects.values("material_predominante").annotate(total=Count("id")):
+        material_data[row["material_predominante"]] = row["total"]
 
     registros = list(
         ResultadoAdministracion.objects

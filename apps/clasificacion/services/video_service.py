@@ -8,7 +8,7 @@ import threading
 
 import cv2
 
-from .tracker_service import TrackManager, CONF_DEFAULT, IMGSZ_DEFAULT
+from .tracker_service import TrackManager, CONF_MIN_TRACK as CONF_DEFAULT, IMGSZ_DEFAULT
 
 _lock = threading.Lock()
 _estado = {

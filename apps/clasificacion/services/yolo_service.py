@@ -23,6 +23,7 @@ _MODEL = None
 # =========================================================
 # FILTRO DE OBJETOS QUE NO QUEREMOS MOSTRAR
 # =========================================================
+# Nombres en inglés tal como los devuelve YOLO (se comparan en minúsculas)
 
 IGNORAR = {
     "plastic bottle cap",
@@ -32,6 +33,9 @@ IGNORAR = {
     "metal bottle cap",
     "six pack rings",
     "rope - strings",
+    "shoe",               # no es residuo reciclable
+    "spread tub",         # redundante con "other plastic container"
+    "squeezable tube",    # cubierto por "Tubo flexible"
 }
 
 # =========================================================
@@ -183,7 +187,9 @@ def detectar_objetos(ruta_imagen, nombre_base=None, imgsz=640, guardar_imagen=Tr
     results = model.predict(
         ruta_imagen,
         imgsz=imgsz,
-        verbose=False
+        iou=0.45,      # NMS agresivo: suprime duplicados del mismo objeto
+        conf=0.25,     # umbral mínimo de confianza para imagen estática
+        verbose=False,
     )
 
     imagen = cv2.imread(ruta_imagen)
@@ -324,13 +330,55 @@ def detectar_objetos(ruta_imagen, nombre_base=None, imgsz=640, guardar_imagen=Tr
 
 
 # =========================================================
+# COLORES POR MATERIAL (BGR para OpenCV / HEX para canvas JS)
+# =========================================================
+
+MATERIAL_DESDE_CLASE: dict = {}   # poblado lazy por _build_material_map()
+
+# Mapa material → color HEX para overlay JS
+COLOR_POR_MATERIAL = {
+    "Metal":        "#94a3b8",   # gris plateado
+    "Vidrio":       "#67e8f9",   # cian
+    "Plástico":     "#60a5fa",   # azul
+    "Papel/Cartón": "#fbbf24",   # ámbar
+    "Orgánico":     "#4ade80",   # verde
+    "Espuma/EPS":   "#e2e8f0",   # blanco grisáceo
+    "Otro":         "#f87171",   # rojo suave
+}
+COLOR_DEFAULT = "#52b788"
+
+
+def _build_material_map() -> dict:
+    """Construye un dict {nombre_es: material} desde MATERIAL_RULES para colorear."""
+    from apps.clasificacion.administracion_service import MATERIAL_RULES
+    mapping = {}
+    for rule in MATERIAL_RULES:
+        obj = rule["if"].get("objeto", "")
+        mat = rule["then"].get("material", "Otro")
+        if obj:
+            mapping[obj] = mat
+    return mapping
+
+
+def _color_para(nombre_es: str) -> str:
+    global MATERIAL_DESDE_CLASE
+    if not MATERIAL_DESDE_CLASE:
+        try:
+            MATERIAL_DESDE_CLASE = _build_material_map()
+        except Exception:
+            pass
+    mat = MATERIAL_DESDE_CLASE.get(nombre_es, "Otro")
+    return COLOR_POR_MATERIAL.get(mat, COLOR_DEFAULT)
+
+
+# =========================================================
 # TRACKING (ByteTrack)
 # =========================================================
 
-# Configuración de tracking — ajustar aquí sin tocar el resto del código
-TRACKING_CONF  = 0.20   # conf al modelo: ByteTrack refinará internamente
-TRACKING_IMGSZ = 1280  # alta resolución → detecta objetos pequeños/lejanos
-TRACKING_IOU   = 0.45  # NMS IoU: agresivo para eliminar cajas duplicadas
+# Umbrales calibrados para reducir falsos positivos y duplicados
+TRACKING_CONF  = 0.35   # más alto → menos ruido y falsos positivos
+TRACKING_IMGSZ = 1280   # alta resolución → detecta objetos pequeños/lejanos
+TRACKING_IOU   = 0.50   # NMS más agresivo: elimina cajas solapadas del mismo objeto
 
 
 def detectar_con_track(frame: np.ndarray,
@@ -359,6 +407,9 @@ def detectar_con_track(frame: np.ndarray,
         verbose=False,
     )
 
+    # Área mínima de caja para ignorar detecciones ruido (px²)
+    MIN_BOX_AREA = 400   # 20×20 px mínimo
+
     detecciones = []
     for r in results:
         if r.boxes is None:
@@ -368,24 +419,31 @@ def detectar_con_track(frame: np.ndarray,
         ids = r.boxes.id  # tensor o None cuando no hay tracks asignados
 
         for i, box in enumerate(r.boxes):
-            clase_id          = int(box.cls[0])
-            nombre_original   = str(nombres_clase[clase_id]).strip()
+            clase_id           = int(box.cls[0])
+            nombre_original    = str(nombres_clase[clase_id]).strip()
             nombre_normalizado = _normalizar(nombre_original)
 
             if nombre_normalizado in IGNORAR:
                 continue
 
-            confianza  = float(box.conf[0])
+            confianza = float(box.conf[0])
             x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-            nombre_es  = _traducir(nombre_original)
-            track_id   = int(ids[i].item()) if ids is not None else None
+
+            # Descartar cajas demasiado pequeñas (ruido del modelo)
+            area = (x2 - x1) * (y2 - y1)
+            if area < MIN_BOX_AREA:
+                continue
+
+            nombre_es = _traducir(nombre_original)
+            track_id  = int(ids[i].item()) if ids is not None else None
+            color     = _color_para(nombre_es)
 
             detecciones.append({
                 "track_id": track_id,
                 "nombre":   nombre_es,
                 "confianza": round(confianza, 4),
                 "x1": x1, "y1": y1, "x2": x2, "y2": y2,
-                "color": "#00c853",
+                "color": color,
             })
 
     return detecciones

@@ -1,354 +1,478 @@
 /**
- * EcoTrack Accesibilidad — TTS + Comandos de Voz
- * Usa Web Speech API nativa del navegador (sin dependencias externas).
- * Degrada silenciosamente si el navegador no soporta las APIs.
+ * EcoTrack Accesibilidad v4
+ * - TTS persistente entre páginas
+ * - Micrófono persistente entre páginas (no se apaga al navegar)
+ * - Ayuda contextual: solo dice los comandos de la página actual
  */
 
 /* ══════════════════════════════════════════════════════════════
-   MÓDULO TTS  (Text-To-Speech)
+   HELPERS GLOBALES
+══════════════════════════════════════════════════════════════ */
+
+function _ind(msg, ms = 2800) {
+    const el = document.getElementById('ecoVozIndicator');
+    const tx = document.getElementById('ecoVozTexto');
+    if (!el || !tx) return;
+    tx.textContent = msg;
+    el.classList.add('visible');
+    clearTimeout(_ind._t);
+    _ind._t = setTimeout(() => el.classList.remove('visible'), ms);
+}
+_ind._t = null;
+
+function _deshBtn(id, titulo) {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.disabled = true; b.title = titulo;
+    b.style.opacity = '0.4'; b.style.cursor = 'not-allowed';
+}
+
+function _clic(id) {
+    const el = document.getElementById(id);
+    if (el && !el.disabled) { el.click(); return true; }
+    return false;
+}
+
+function _clicSel(sel) {
+    const el = document.querySelector(sel);
+    if (el) { el.click(); return true; } return false;
+}
+
+function _ir(url) { window.location.href = url; }
+
+function _tab(target) {
+    const b = document.querySelector(`[data-bs-target="${target}"]`);
+    if (b) { b.click(); return true; } return false;
+}
+
+function _ruta() { return window.location.pathname; }
+
+function _enRuta(frag) { return _ruta().includes(frag); }
+
+function _scrollA(sel) {
+    const el = document.querySelector(sel);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return true; } return false;
+}
+
+function _cerrarModal() {
+    const m = document.querySelector('.modal.show');
+    if (m) { bootstrap.Modal.getInstance(m)?.hide(); return true; } return false;
+}
+
+function _enviarForm(sel = 'form') {
+    const f = document.querySelector(sel);
+    if (f) { f.requestSubmit ? f.requestSubmit() : f.submit(); return true; } return false;
+}
+
+function _norm(t) {
+    return t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   TTS
 ══════════════════════════════════════════════════════════════ */
 const EcoVoz = {
-    activo: false,
-    voz: null,
-    velocidad: 1.0,
-    volumen: 1.0,
-    disponible: false,
+    activo: false, voz: null, velocidad: 1.0, volumen: 1.0, disponible: false,
 
     init() {
-        if (!('speechSynthesis' in window)) {
-            // API no disponible: deshabilitar botón silenciosamente
-            const btn = document.getElementById('btnTTS');
-            if (btn) {
-                btn.disabled = true;
-                btn.title = 'Lector de pantalla no disponible en este navegador';
-                btn.style.opacity = '0.4';
-                btn.style.cursor = 'not-allowed';
-            }
-            return;
-        }
-
+        if (!('speechSynthesis' in window)) { _deshBtn('btnTTS', 'Lector no disponible'); return; }
         this.disponible = true;
-
-        // Recuperar preferencia guardada
         this.activo = localStorage.getItem('ecotrack-tts') === 'true';
-
-        // Cargar voces (puede ser asíncrono en algunos navegadores)
-        const cargarVoces = () => {
-            const voces = window.speechSynthesis.getVoices();
-            // Preferir voz en español
-            this.voz = voces.find(v => v.lang.startsWith('es')) || voces[0] || null;
+        const cv = () => {
+            const vs = window.speechSynthesis.getVoices();
+            this.voz = vs.find(v => v.lang.startsWith('es')) || vs[0] || null;
         };
-
-        cargarVoces();
-        if (window.speechSynthesis.onvoiceschanged !== undefined) {
-            window.speechSynthesis.onvoiceschanged = cargarVoces;
-        }
-
-        // Actualizar UI según preferencia guardada
+        cv();
+        if (window.speechSynthesis.onvoiceschanged !== undefined)
+            window.speechSynthesis.onvoiceschanged = cv;
         this._actualizarBoton();
-
-        // Si estaba activo, anunciar bienvenida
-        if (this.activo) {
-            setTimeout(() => this._leerTituloPagina(), 800);
-        }
+        if (this.activo) setTimeout(() => this._leerTitulo(), 800);
     },
 
-    /**
-     * Limpia etiquetas HTML y lee el texto con SpeechSynthesis.
-     * @param {string} texto - Texto a leer (puede contener HTML).
-     * @param {boolean} interrumpir - Si true, cancela la locución actual antes de hablar.
-     */
     hablar(texto, interrumpir = true) {
-        if (!this.disponible || !this.activo) return;
-        if (!texto || texto.trim() === '') return;
-
-        // Eliminar etiquetas HTML
-        const sinHtml = texto.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-
+        if (!this.disponible || !this.activo || !texto?.trim()) return;
+        const s = texto.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
         if (interrumpir) window.speechSynthesis.cancel();
-
-        const utterance = new SpeechSynthesisUtterance(sinHtml);
-        utterance.lang = 'es-ES';
-        utterance.rate = this.velocidad;
-        utterance.volume = this.volumen;
-        if (this.voz) utterance.voice = this.voz;
-
-        window.speechSynthesis.speak(utterance);
+        const u = new SpeechSynthesisUtterance(s);
+        u.lang = 'es-ES'; u.rate = this.velocidad; u.volume = this.volumen;
+        if (this.voz) u.voice = this.voz;
+        window.speechSynthesis.speak(u);
     },
 
-    /** Lee el h1 principal de la página */
-    _leerTituloPagina() {
-        if (!this.disponible || !this.activo) return;
-        const h1 = document.querySelector('h1, .topbar-title');
-        if (h1) this.hablar('Página: ' + h1.innerText);
+    _leerTitulo() {
+        const h = document.querySelector('h1,.topbar-title');
+        if (h) this.hablar('Página: ' + h.innerText);
     },
 
-    /** Lee título + contenido principal */
     leerPagina() {
-        if (!this.disponible) {
-            this._mostrarIndicador('TTS no disponible en este navegador');
-            return;
-        }
-        if (!this.activo) {
-            this._mostrarIndicador('Activa el lector de pantalla primero (Alt+V)');
-            return;
-        }
-
+        if (!this.disponible) { _ind('TTS no disponible'); return; }
+        if (!this.activo) { _ind('Activa el lector primero (Alt+V)'); return; }
         window.speechSynthesis.cancel();
-
         const partes = [];
-
-        // Título de la página (topbar o h1)
-        const titulo = document.querySelector('.topbar-title, h1');
-        if (titulo) partes.push('Página: ' + titulo.innerText.trim());
-
-        // Contenido principal
+        const t = document.querySelector('.topbar-title,h1');
+        if (t) partes.push('Página: ' + t.innerText.trim());
         const main = document.getElementById('main-content') || document.querySelector('main');
         if (main) {
-            // Obtener texto visible ignorando scripts/styles
-            const textoMain = Array.from(main.querySelectorAll(
-                'h1, h2, h3, h4, p, td, th, label, .stat-value, .stat-label, .alert, li'
-            ))
-                .map(el => el.innerText.trim())
-                .filter(t => t.length > 0)
-                .join('. ');
-            if (textoMain) partes.push(textoMain);
+            const txt = Array.from(main.querySelectorAll(
+                'h1,h2,h3,h4,p,td,th,label,.stat-value,.stat-label,.alert,li'
+            )).map(el => el.innerText.trim()).filter(Boolean).join('. ');
+            if (txt) partes.push(txt);
         }
-
-        if (partes.length === 0) {
-            partes.push('No se encontró contenido para leer en esta página.');
-        }
-
-        this.hablar(partes.join('. '), true);
-        this._mostrarIndicador('Leyendo página...');
+        this.hablar(partes.join('. ') || 'Sin contenido.', true);
+        _ind('Leyendo página...');
     },
 
-    /** Activa o desactiva el TTS */
     toggle() {
         if (!this.disponible) return;
-
         this.activo = !this.activo;
         localStorage.setItem('ecotrack-tts', String(this.activo));
         this._actualizarBoton();
-
-        if (this.activo) {
-            this.hablar('Lector de pantalla activado. ' +
-                'Usa Alt+R para leer la página completa, Alt+S para silenciar.');
-        } else {
-            window.speechSynthesis.cancel();
-            this._mostrarIndicador('Lector desactivado');
-        }
+        if (this.activo) this.hablar('Lector activado.');
+        else { window.speechSynthesis.cancel(); _ind('Lector desactivado'); }
     },
 
-    /** Sincroniza el aspecto visual del botón con el estado activo/inactivo */
     _actualizarBoton() {
-        const btn = document.getElementById('btnTTS');
-        if (!btn) return;
-        if (this.activo) {
-            btn.classList.add('activo');
-            btn.setAttribute('aria-pressed', 'true');
-            btn.title = 'Desactivar lector de pantalla (Alt+V)';
-        } else {
-            btn.classList.remove('activo');
-            btn.setAttribute('aria-pressed', 'false');
-            btn.title = 'Activar lector de pantalla (Alt+V)';
-        }
+        const b = document.getElementById('btnTTS');
+        if (!b) return;
+        b.classList.toggle('activo', this.activo);
+        b.setAttribute('aria-pressed', String(this.activo));
+        b.title = this.activo ? 'Desactivar lector (Alt+V)' : 'Activar lector (Alt+V)';
     },
-
-    /** Muestra brevemente el indicador flotante con un mensaje */
-    _mostrarIndicador(msg) {
-        const indicator = document.getElementById('ecoVozIndicator');
-        const textoEl   = document.getElementById('ecoVozTexto');
-        if (!indicator || !textoEl) return;
-        textoEl.textContent = msg;
-        indicator.classList.add('visible');
-        clearTimeout(EcoVoz._indicatorTimer);
-        EcoVoz._indicatorTimer = setTimeout(() => {
-            indicator.classList.remove('visible');
-        }, 2800);
-    },
-
-    _indicatorTimer: null,
 };
 
 
 /* ══════════════════════════════════════════════════════════════
-   MÓDULO COMANDOS DE VOZ  (SpeechRecognition)
+   COMANDOS DE VOZ
 ══════════════════════════════════════════════════════════════ */
 const EcoComandos = {
     reconocimiento: null,
-    activo: false,
-    disponible: false,
+    activo:         false,
+    disponible:     false,
 
-    /** Mapa de frases → acciones */
-    COMANDOS: {
-        'inicio':          () => { window.location.href = '/'; },
-        'inicio detección':() => { window.location.href = '/'; },
-        'administración':  () => { window.location.href = '/administracion/'; },
-        'administracion':  () => { window.location.href = '/administracion/'; },
-        'reportes':        () => { window.location.href = '/reportes/'; },
-        'historial':       () => { window.location.href = '/historial/'; },
-        'rutas':           () => { window.location.href = '/recoleccion/'; },
-        'recolección':     () => { window.location.href = '/recoleccion/'; },
-        'recoleccion':     () => { window.location.href = '/recoleccion/'; },
-        'contabilidad':    () => { window.location.href = '/contabilidad/'; },
-        'leer página':     () => { EcoVoz.leerPagina(); },
-        'leer pagina':     () => { EcoVoz.leerPagina(); },
-        'leer':            () => { EcoVoz.leerPagina(); },
-        'silencio':        () => { window.speechSynthesis.cancel(); },
-        'silenciar':       () => { window.speechSynthesis.cancel(); },
-        'parar':           () => { window.speechSynthesis.cancel(); },
-        'detener':         () => { window.speechSynthesis.cancel(); },
-        'activar lector':  () => { if (!EcoVoz.activo) EcoVoz.toggle(); },
-        'desactivar lector': () => { if (EcoVoz.activo) EcoVoz.toggle(); },
-        'subir':           () => { window.scrollBy({ top: -200, behavior: 'smooth' }); },
-        'bajar':           () => { window.scrollBy({ top: 200, behavior: 'smooth' }); },
-        'arriba':          () => { window.scrollTo({ top: 0, behavior: 'smooth' }); },
-        'abajo':           () => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); },
-        'ayuda':           () => { EcoComandos._leerAyuda(); },
+    /**
+     * Comandos agrupados por contexto de página.
+     * Cada entrada: { frases: [...], accion: fn, paginas: ['*'] | ['/ruta'] }
+     * paginas: ['*']   → disponible en todas las páginas
+     *         ['/administracion'] → solo en esa ruta (usa includes)
+     */
+    COMANDOS: [
+
+        // ── CÁMARA (solo en /) ──────────────────────────────────────────────
+        { paginas: ['/'],
+          frases: ['iniciar camara','iniciar cámara','encender camara','encender cámara','abrir camara'],
+          accion: () => _clic('btn-iniciar-camara') },
+        { paginas: ['/'],
+          frases: ['detener camara','detener cámara','apagar camara','apagar cámara','parar camara'],
+          accion: () => _clic('btn-detener-camara') },
+        { paginas: ['/'],
+          frases: ['guardar analisis','guardar análisis','guardar frame','guardar foto','guardar captura'],
+          accion: () => _clic('btn-guardar-analisis') },
+        { paginas: ['/'],
+          frases: ['auto guardado','auto-guardado','guardado automatico','guardado automático'],
+          accion: () => _clic('btn-autosave-toggle') },
+        { paginas: ['/'],
+          frases: ['metricas','métricas','debug','panel debug'],
+          accion: () => _clic('btn-debug-toggle') },
+        { paginas: ['/'],
+          frases: ['tab camara','tab cámara','pestaña camara','pestaña cámara','ir a camara','modo camara'],
+          accion: () => _tab('#tab-cam') },
+        { paginas: ['/'],
+          frases: ['tab imagen','pestaña imagen','ir a imagen','modo imagen'],
+          accion: () => _tab('#tab-img') },
+        { paginas: ['/'],
+          frases: ['tab video','pestaña video','ir a video','modo video'],
+          accion: () => _tab('#tab-video') },
+        { paginas: ['/'],
+          frases: ['analizar','analizar imagen','detectar','detectar residuos'],
+          accion: () => { const b = document.querySelector('#form-img [type="submit"]'); b?.click(); } },
+
+        // ── ADMINISTRACIÓN ──────────────────────────────────────────────────
+        { paginas: ['/administracion'],
+          frases: ['procesar pendientes','procesar todos','procesar residuos'],
+          accion: () => _clic('btn-proc-todos') || _clicSel('button.btn-warning') },
+        { paginas: ['/administracion'],
+          frases: ['ver aceptados','residuos aceptados','base de datos'],
+          accion: () => _ir('/administracion/aceptados/') },
+        { paginas: ['/administracion'],
+          frases: ['exportar json'], accion: () => _clicSel('a[href*="exportar/json"]') },
+        { paginas: ['/administracion'],
+          frases: ['exportar xml'],  accion: () => _clicSel('a[href*="exportar/xml"]') },
+        { paginas: ['/administracion'],
+          frases: ['exportar txt'],  accion: () => _clicSel('a[href*="exportar/txt"]') },
+        { paginas: ['/administracion'],
+          frases: ['exportar','descargar'], accion: () => _clicSel('.dropdown-toggle') },
+        { paginas: ['/administracion'],
+          frases: ['eliminar sin clasificar'],
+          accion: () => _clicSel('button.btn-outline-danger') },
+
+        // ── CONTABILIDAD – DASHBOARD ────────────────────────────────────────
+        { paginas: ['/contabilidad/'],
+          frases: ['nuevo ingreso','crear ingreso','agregar ingreso'],
+          accion: () => _ir('/contabilidad/ingresos/crear/') },
+        { paginas: ['/contabilidad/'],
+          frases: ['nuevo egreso','crear egreso','agregar egreso'],
+          accion: () => _ir('/contabilidad/egresos/crear/') },
+        { paginas: ['/contabilidad/'],
+          frases: ['ver ingresos','lista ingresos'],
+          accion: () => _ir('/contabilidad/ingresos/') },
+        { paginas: ['/contabilidad/'],
+          frases: ['ver egresos','lista egresos'],
+          accion: () => _ir('/contabilidad/egresos/') },
+        { paginas: ['/contabilidad/'],
+          frases: ['proyeccion','proyección','ver proyeccion'],
+          accion: () => _ir('/contabilidad/proyeccion/') },
+        { paginas: ['/contabilidad/'],
+          frases: ['precios','precios por material','gestionar precios'],
+          accion: () => _ir('/contabilidad/precios/') },
+
+        // ── CONTABILIDAD – PROYECCIÓN ───────────────────────────────────────
+        { paginas: ['/contabilidad/proyeccion'],
+          frases: ['calcular tanda','calcular','calcular proyeccion'],
+          accion: () => _clicSel('button.btn-success[type="submit"]') },
+        { paginas: ['/contabilidad/proyeccion'],
+          frases: ['total historico','ver todo','quitar fechas','limpiar fechas'],
+          accion: () => _ir('/contabilidad/proyeccion/') },
+
+        // ── CONTABILIDAD – PRECIOS ──────────────────────────────────────────
+        { paginas: ['/contabilidad/precios'],
+          frases: ['guardar precio','agregar precio','nuevo precio'],
+          accion: () => _clicSel('button.btn-success[type="submit"]') },
+
+        // ── REPORTES ────────────────────────────────────────────────────────
+        { paginas: ['/reportes'],
+          frases: ['exportar excel','descargar excel'],
+          accion: () => _ir('/reportes/excel/') },
+        { paginas: ['/reportes'],
+          frases: ['imprimir reporte','imprimir'],
+          accion: () => _ir('/reportes/imprimir/') },
+
+        // ── PERFIL ──────────────────────────────────────────────────────────
+        { paginas: ['/perfil'],
+          frases: ['cambiar contrasena','cambiar contraseña','cambiar password'],
+          accion: () => _ir('/perfil/password/') },
+        { paginas: ['/perfil'],
+          frases: ['guardar cambios','guardar perfil'],
+          accion: () => _enviarForm('form') },
+
+        // ── USUARIOS ────────────────────────────────────────────────────────
+        { paginas: ['/usuarios'],
+          frases: ['nuevo usuario','crear usuario','agregar usuario'],
+          accion: () => _ir('/usuarios/crear/') },
+
+        // ── ACCIONES GENÉRICAS (filtros, formularios, modales) ──────────────
+        { paginas: ['*'],
+          frases: ['aplicar filtro','filtrar','buscar'],
+          accion: () => _clicSel('button.btn-success[type="submit"],button.btn-primary[type="submit"]') },
+        { paginas: ['*'],
+          frases: ['limpiar filtros','limpiar filtro','quitar filtros','sin filtro'],
+          accion: () => _clicSel('a.btn-outline-secondary[href*="?"]') || _clicSel('a.btn-outline-secondary') },
+        { paginas: ['*'],
+          frases: ['guardar','guardar cambios','confirmar'],
+          accion: () => _clicSel('button.btn-success[type="submit"]') },
+        { paginas: ['*'],
+          frases: ['cancelar','volver','atras','atrás'],
+          accion: () => history.back() },
+        { paginas: ['*'],
+          frases: ['cerrar modal','cerrar ventana','cerrar dialogo','cerrar'],
+          accion: () => _cerrarModal() },
+        { paginas: ['*'],
+          frases: ['cerrar sesion','cerrar sesión','salir','logout'],
+          accion: () => _clicSel('button[type="submit"].text-danger,form[action*="logout"] button') },
+
+        // ── NAVEGACIÓN ───────────────────────────────────────────────────────
+        { paginas: ['*'],
+          frases: ['inicio','deteccion ia','detección ia','ir al inicio','volver al inicio'],
+          accion: () => _ir('/') },
+        { paginas: ['*'],
+          frases: ['administracion','administración'],
+          accion: () => _ir('/administracion/') },
+        { paginas: ['*'],
+          frases: ['reportes'],
+          accion: () => _ir('/reportes/') },
+        { paginas: ['*'],
+          frases: ['historial'],
+          accion: () => _ir('/historial/') },
+        { paginas: ['*'],
+          frases: ['contabilidad'],
+          accion: () => _ir('/contabilidad/') },
+        { paginas: ['*'],
+          frases: ['perfil','mi perfil'],
+          accion: () => _ir('/perfil/') },
+        { paginas: ['*'],
+          frases: ['usuarios','gestionar usuarios'],
+          accion: () => _ir('/usuarios/') },
+
+        // ── SCROLL ───────────────────────────────────────────────────────────
+        { paginas: ['*'], frases: ['subir'],
+          accion: () => window.scrollBy({ top: -300, behavior: 'smooth' }) },
+        { paginas: ['*'], frases: ['bajar'],
+          accion: () => window.scrollBy({ top: 300, behavior: 'smooth' }) },
+        { paginas: ['*'], frases: ['ir arriba','arriba','inicio de pagina'],
+          accion: () => window.scrollTo({ top: 0, behavior: 'smooth' }) },
+        { paginas: ['*'], frases: ['ir abajo','abajo','final de pagina'],
+          accion: () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }) },
+        { paginas: ['*'], frases: ['ir a la tabla','ver tabla'],
+          accion: () => _scrollA('table,.table-responsive') },
+        { paginas: ['*'], frases: ['ir al grafico','ver grafico'],
+          accion: () => _scrollA('canvas,.chart-wrap') },
+        { paginas: ['*'], frases: ['ir al formulario','ver formulario'],
+          accion: () => _scrollA('form') },
+
+        // ── TEMA ─────────────────────────────────────────────────────────────
+        { paginas: ['*'], frases: ['modo oscuro','tema oscuro'],
+          accion: () => { if (document.documentElement.getAttribute('data-theme') !== 'dark') _clic('theme-toggle'); } },
+        { paginas: ['*'], frases: ['modo claro','tema claro'],
+          accion: () => { if (document.documentElement.getAttribute('data-theme') !== 'light') _clic('theme-toggle'); } },
+        { paginas: ['*'], frases: ['cambiar tema','alternar tema'],
+          accion: () => _clic('theme-toggle') },
+
+        // ── LECTOR TTS ────────────────────────────────────────────────────────
+        { paginas: ['*'], frases: ['leer pagina','leer página','leer todo','leer'],
+          accion: () => EcoVoz.leerPagina() },
+        { paginas: ['*'], frases: ['silencio','silenciar','parar audio','para'],
+          accion: () => window.speechSynthesis.cancel() },
+        { paginas: ['*'], frases: ['activar lector'],
+          accion: () => { if (!EcoVoz.activo) EcoVoz.toggle(); } },
+        { paginas: ['*'], frases: ['desactivar lector'],
+          accion: () => { if (EcoVoz.activo)  EcoVoz.toggle(); } },
+
+        // ── AYUDA ─────────────────────────────────────────────────────────────
+        { paginas: ['*'], frases: ['ayuda','comandos','que puedo decir'],
+          accion: () => EcoComandos._leerAyuda() },
+    ],
+
+    // ── Comandos activos para la ruta actual ─────────────────────────────────
+    _comandosActivos() {
+        const ruta = _ruta();
+        return this.COMANDOS.filter(c =>
+            c.paginas.includes('*') ||
+            c.paginas.some(p => ruta === p || ruta.startsWith(p))
+        );
     },
 
+    // ────────────────────────────────────────────────────────────────────────
     init() {
-        const SpeechRecognition =
-            window.SpeechRecognition || window.webkitSpeechRecognition || null;
-
-        if (!SpeechRecognition) {
-            // API no disponible: deshabilitar botón silenciosamente
-            const btn = document.getElementById('btnMicrofono');
-            if (btn) {
-                btn.disabled = true;
-                btn.title = 'Comandos de voz no disponibles en este navegador';
-                btn.style.opacity = '0.4';
-                btn.style.cursor = 'not-allowed';
-            }
-            return;
-        }
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+        if (!SR) { _deshBtn('btnMicrofono', 'Comandos de voz no disponibles'); return; }
 
         this.disponible = true;
-        this.reconocimiento = new SpeechRecognition();
-        this.reconocimiento.lang = 'es-ES';
-        this.reconocimiento.interimResults = false;
-        this.reconocimiento.maxAlternatives = 3;
-        this.reconocimiento.continuous = false; // Se reinicia manualmente tras cada resultado
+        this.reconocimiento = new SR();
+        this.reconocimiento.lang            = 'es-ES';
+        this.reconocimiento.interimResults  = false;
+        this.reconocimiento.maxAlternatives = 5;
+        this.reconocimiento.continuous      = false;
 
         this.reconocimiento.onresult = (event) => {
-            const alternativas = Array.from(event.results[0])
-                .map(alt => alt.transcript.toLowerCase().trim());
-            // Intentar con cada alternativa hasta encontrar un comando
-            for (const texto of alternativas) {
-                if (this.procesar(texto)) break;
-            }
+            const alts = Array.from(event.results[0]).map(a => a.transcript.toLowerCase().trim());
+            for (const t of alts) { if (this.procesar(t)) break; }
         };
-
         this.reconocimiento.onerror = (event) => {
-            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                this._desactivar();
-                EcoVoz._mostrarIndicador('Permiso de micrófono denegado');
-            } else if (event.error !== 'no-speech') {
-                // Reiniciar tras error no crítico si sigue activo
-                if (this.activo) setTimeout(() => this._iniciarEscucha(), 500);
+            if (['not-allowed','service-not-allowed'].includes(event.error)) {
+                this._desactivar(); _ind('Permiso de micrófono denegado');
+            } else if (event.error !== 'no-speech' && this.activo) {
+                setTimeout(() => this._iniciarEscucha(), 500);
             }
         };
-
         this.reconocimiento.onend = () => {
-            // Reiniciar escucha si sigue activo (modo continuo manual)
             if (this.activo) setTimeout(() => this._iniciarEscucha(), 250);
         };
-    },
 
-    toggle() {
-        if (!this.disponible) return;
-
-        if (this.activo) {
-            this._desactivar();
-        } else {
-            this._activar();
+        // ── Persistencia entre páginas ────────────────────────────────────
+        if (localStorage.getItem('ecotrack-mic') === 'true') {
+            // Reactivar tras recarga sin molestar al usuario con TTS
+            setTimeout(() => {
+                this.activo = true;
+                this._actualizarBoton();
+                this._iniciarEscucha();
+                _ind('Micrófono activo', 1500);
+            }, 600);
         }
     },
+
+    toggle() { if (this.disponible) this.activo ? this._desactivar() : this._activar(); },
 
     _activar() {
         this.activo = true;
+        localStorage.setItem('ecotrack-mic', 'true');
         this._actualizarBoton();
         this._iniciarEscucha();
-
-        const indicator = document.getElementById('ecoVozIndicator');
-        const textoEl   = document.getElementById('ecoVozTexto');
-        if (indicator && textoEl) {
-            textoEl.textContent = 'Escuchando comandos...';
-            indicator.classList.add('visible');
-        }
-
-        EcoVoz.hablar('Comandos de voz activados. Di "ayuda" para escuchar los comandos disponibles.');
+        _ind('Escuchando comandos…', 99999);
+        EcoVoz.hablar('Comandos activados. Di ayuda para ver los disponibles.');
     },
 
     _desactivar() {
         this.activo = false;
-        try { this.reconocimiento.stop(); } catch (_) { /* ignora */ }
+        localStorage.setItem('ecotrack-mic', 'false');
+        try { this.reconocimiento.stop(); } catch (_) {}
         this._actualizarBoton();
-
-        const indicator = document.getElementById('ecoVozIndicator');
-        if (indicator) indicator.classList.remove('visible');
-
-        EcoVoz.hablar('Comandos de voz desactivados.');
+        const el = document.getElementById('ecoVozIndicator');
+        if (el) el.classList.remove('visible');
+        EcoVoz.hablar('Comandos desactivados.');
     },
 
     _iniciarEscucha() {
         if (!this.activo) return;
-        try { this.reconocimiento.start(); } catch (_) { /* ignora si ya estaba iniciado */ }
+        try { this.reconocimiento.start(); } catch (_) {}
     },
 
     /**
-     * Busca y ejecuta el comando que mejor coincida con el texto reconocido.
-     * @param {string} texto - Texto en minúsculas.
-     * @returns {boolean} true si se encontró y ejecutó algún comando.
+     * Matching: exacto primero, luego inclusión.
+     * Solo evalúa comandos activos para la ruta actual.
      */
     procesar(texto) {
-        // Buscar coincidencia exacta primero
-        if (this.COMANDOS[texto]) {
-            this._ejecutar(texto, this.COMANDOS[texto]);
-            return true;
-        }
+        const tn = _norm(texto);
+        const activos = this._comandosActivos();
 
-        // Buscar si el texto reconocido contiene alguna clave de comando
-        for (const [clave, accion] of Object.entries(this.COMANDOS)) {
-            if (texto.includes(clave)) {
-                this._ejecutar(clave, accion);
-                return true;
-            }
-        }
+        for (const cmd of activos)
+            for (const f of cmd.frases)
+                if (tn === _norm(f)) { this._ejecutar(f, cmd.accion); return true; }
 
-        // No se reconoció ningún comando — mostrar feedback discreto
-        EcoVoz._mostrarIndicador('No reconocido: "' + texto + '"');
+        for (const cmd of activos)
+            for (const f of cmd.frases)
+                if (tn.includes(_norm(f))) { this._ejecutar(f, cmd.accion); return true; }
+
+        _ind('"' + texto + '" — no reconocido');
         return false;
     },
 
     _ejecutar(clave, accion) {
-        EcoVoz._mostrarIndicador('Comando: ' + clave);
-        EcoVoz.hablar('Ejecutando: ' + clave, false);
-        try { accion(); } catch (e) { console.warn('EcoComandos: error ejecutando comando', e); }
+        _ind('▶ ' + clave);
+        EcoVoz.hablar(clave, false);
+        try { accion(); } catch (e) { console.warn('EcoComandos:', e); }
     },
 
     _actualizarBoton() {
-        const btn = document.getElementById('btnMicrofono');
-        if (!btn) return;
-        if (this.activo) {
-            btn.classList.add('activo');
-            btn.setAttribute('aria-pressed', 'true');
-            btn.title = 'Desactivar comandos de voz (Alt+M)';
-        } else {
-            btn.classList.remove('activo');
-            btn.setAttribute('aria-pressed', 'false');
-            btn.title = 'Activar comandos de voz (Alt+M)';
-        }
+        const b = document.getElementById('btnMicrofono');
+        if (!b) return;
+        b.classList.toggle('activo', this.activo);
+        b.setAttribute('aria-pressed', String(this.activo));
+        b.title = this.activo ? 'Desactivar comandos (Alt+M)' : 'Activar comandos (Alt+M)';
     },
 
+    /** Lee SOLO los comandos disponibles en la página actual */
     _leerAyuda() {
-        const ayuda =
-            'Comandos disponibles: ' +
-            'inicio, administración, reportes, historial, rutas, contabilidad, ' +
-            'leer página, silencio, subir, bajar, arriba, abajo, ' +
-            'activar lector, desactivar lector.';
-        EcoVoz.hablar(ayuda, true);
+        const ruta  = _ruta();
+        const activos = this._comandosActivos();
+
+        // Separar comandos de página específica de los genéricos
+        const especificos = activos.filter(c => !c.paginas.includes('*'));
+        const genericos   = activos.filter(c =>  c.paginas.includes('*'));
+
+        const lista = (cmds) => cmds.map(c => c.frases[0]).join(', ');
+
+        let texto = '';
+
+        if (especificos.length)
+            texto += 'En esta página puedes decir: ' + lista(especificos) + '. ';
+
+        // Comandos genéricos siempre disponibles (se resume para no ser largo)
+        texto +=
+            'Siempre disponibles: ' +
+            'inicio, administración, reportes, historial, contabilidad, perfil, ' +
+            'subir, bajar, leer página, silencio, cambiar tema, ayuda, cerrar sesión.';
+
+        EcoVoz.hablar(texto, true);
     },
 };
 
@@ -358,53 +482,38 @@ const EcoComandos = {
 ══════════════════════════════════════════════════════════════ */
 document.addEventListener('keydown', (e) => {
     if (!e.altKey) return;
-
     switch (e.key.toLowerCase()) {
-        case 'v':
-            e.preventDefault();
-            EcoVoz.toggle();
-            break;
-        case 'm':
-            e.preventDefault();
-            EcoComandos.toggle();
-            break;
-        case 'r':
-            e.preventDefault();
-            EcoVoz.leerPagina();
-            break;
+        case 'v': e.preventDefault(); EcoVoz.toggle();       break;
+        case 'm': e.preventDefault(); EcoComandos.toggle();  break;
+        case 'r': e.preventDefault(); EcoVoz.leerPagina();   break;
         case 's':
             e.preventDefault();
             if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-            EcoVoz._mostrarIndicador('Audio silenciado');
+            _ind('Audio silenciado');
             break;
     }
 });
 
 
 /* ══════════════════════════════════════════════════════════════
-   AUTO-LECTURA: hover en links del sidebar
+   AUTO-LECTURA
 ══════════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
-    // Leer links del sidebar al hacer hover cuando TTS está activo
     document.querySelectorAll('.sb-link').forEach(link => {
         link.addEventListener('mouseenter', () => {
-            if (EcoVoz.activo && EcoVoz.disponible) {
-                EcoVoz.hablar(link.innerText.trim(), false);
-            }
+            if (EcoVoz.activo) EcoVoz.hablar(link.innerText.trim(), false);
         });
     });
 
-    // Leer alerts/mensajes Django automáticamente si TTS activo
-    // (esto también se invoca desde el inline script en base.html)
-    document.querySelectorAll('.toast-body').forEach(el => {
+    document.querySelectorAll('.toast-body,.alert').forEach(el => {
         if (EcoVoz.activo) EcoVoz.hablar(el.innerText.trim());
     });
 
-    // Auto-leer resultados de análisis si existen en la página
-    const resultadoAnalisis = document.querySelector(
-        '[data-accessibility-announce], .resultado-clasificacion, #resultado-ia'
-    );
-    if (resultadoAnalisis && EcoVoz.activo) {
-        setTimeout(() => EcoVoz.hablar(resultadoAnalisis.innerText.trim()), 1200);
+    // Leer cambios del estado de cámara automáticamente
+    const camStatus = document.getElementById('camera-status');
+    if (camStatus) {
+        new MutationObserver(() => {
+            if (EcoVoz.activo) EcoVoz.hablar(camStatus.textContent.trim(), false);
+        }).observe(camStatus, { childList: true, characterData: true, subtree: true });
     }
 });

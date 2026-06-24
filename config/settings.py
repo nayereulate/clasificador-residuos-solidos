@@ -28,7 +28,7 @@ INSTALLED_APPS = [
     'apps.clasificacion',
     'apps.historial',
     'apps.reportes',
-    'apps.recoleccion',
+
     'apps.contabilidad',
 ]
 

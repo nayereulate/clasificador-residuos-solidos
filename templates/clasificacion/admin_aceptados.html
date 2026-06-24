@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Residuos Aceptados{% endblock %}
+{% block nav_admin %}active{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-3">
+    <div>
+        <h1 class="h4 fw-700 mb-0" style="color:var(--text-primary)">
+            <i class="fa-solid fa-circle-check me-2" style="color:#52b788"></i>Residuos Aceptados
+        </h1>
+        <p class="text-muted small mb-0">Base de datos general de residuos aceptados por administración</p>
+    </div>
+    <a href="{% url 'admin_dashboard' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="fa-solid fa-arrow-left me-1"></i>Volver
+    </a>
+</div>
+
+<!-- Filtros -->
+<div class="card mb-4">
+    <div class="card-body p-3">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small">Material</label>
+                <select name="material" class="form-select form-select-sm">
+                    <option value="">Todos</option>
+                    {% for m in materiales_disponibles %}
+                    <option value="{{ m }}" {% if filtro_material == m %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small">Desde</label>
+                <input type="date" name="fecha_desde" class="form-control form-control-sm" value="{{ filtro_fecha_desde }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small">Hasta</label>
+                <input type="date" name="fecha_hasta" class="form-control form-control-sm" value="{{ filtro_fecha_hasta }}">
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-success btn-sm w-100">
+                    <i class="fa-solid fa-filter me-1"></i>Filtrar
+                </button>
+                <a href="{% url 'admin_aceptados' %}" class="btn btn-outline-secondary btn-sm w-100">
+                    <i class="fa-solid fa-xmark me-1"></i>Limpiar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Tabla -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center" style="background:transparent;">
+        <span class="fw-600">Total: {{ total }} residuos aceptados</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 small">
+                <thead style="background:var(--table-head-bg)">
+                    <tr>
+                        <th class="ps-3">#</th>
+                        <th>Fecha aceptación</th>
+                        <th>Objeto</th>
+                        <th>Material</th>
+                        <th>Prioridad</th>
+                        <th>Peso (kg)</th>
+                        <th>Ingreso generado</th>
+                        <th>Aceptado por</th>
+                        <th>Observaciones</th>
+                        <th class="pe-3"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in aceptados %}
+                    {% with admin=a.residuo.administracion %}
+                    <tr>
+                        <td class="ps-3 text-muted">{{ a.residuo.id }}</td>
+                        <td>{{ a.fecha_aceptacion|date:"d/m/Y H:i" }}</td>
+                        <td class="fw-semibold">{{ a.residuo.tipo|default:"–" }}</td>
+                        <td>
+                            {% if admin %}
+                            <span class="badge bg-{{ MATERIAL_COLORS|default_if_none:'secondary' }}">
+                                {{ admin.material_predominante }}
+                            </span>
+                            {% else %}–{% endif %}
+                        </td>
+                        <td>
+                            {% if admin %}
+                            <span class="badge bg-{{ PRIORITY_COLORS|default_if_none:'secondary' }}">
+                                {{ admin.prioridad }}
+                            </span>
+                            {% else %}–{% endif %}
+                        </td>
+                        <td>{{ a.peso_kg }} kg</td>
+                        <td>
+                            {% if a.ingreso_generado %}
+                            <span class="text-success fw-600">${{ a.ingreso_generado.monto_total|floatformat:2 }}</span>
+                            {% else %}
+                            <span class="text-muted">Sin ingreso</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ a.aceptado_por.username|default:"–" }}</td>
+                        <td style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                            {{ a.observaciones|default:"–" }}
+                        </td>
+                        <td class="text-end pe-3">
+                            <form method="POST" action="{% url 'admin_rechazar' a.residuo.id %}"
+                                  onsubmit="return confirm('¿Rechazar este residuo?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm">
+                                    <i class="fa-solid fa-xmark me-1"></i>Rechazar
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endwith %}
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center py-5 text-muted">
+                            <i class="fa-solid fa-box-open fa-2x mb-2" style="opacity:.3;"></i>
+                            <p class="mb-0">No hay residuos aceptados aún.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

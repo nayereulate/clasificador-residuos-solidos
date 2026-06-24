@@ -11,7 +11,7 @@ urlpatterns = [
     path('', include('apps.usuarios.urls')),
     path('', include('apps.historial.urls')),
     path('', include('apps.reportes.urls')),
-    path('', include('apps.recoleccion.urls')),
+
     path('', include('apps.contabilidad.urls')),
 ]
 

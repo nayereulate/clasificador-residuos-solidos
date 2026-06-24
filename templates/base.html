@@ -701,10 +701,6 @@
         </a>
 
         <div class="sb-section">Gestión</div>
-        <a href="{% url 'rutas_lista' %}" class="sb-link {% block nav_recoleccion %}{% endblock %}">
-            <i class="fa-solid fa-truck sb-icon"></i>
-            Recolección
-        </a>
         {% if user.is_authenticated %}
             {% if user.rol == 'administrador' or user.is_superuser %}
             <a href="{% url 'usuarios_lista' %}" class="sb-link {% block nav_usuarios %}{% endblock %}">

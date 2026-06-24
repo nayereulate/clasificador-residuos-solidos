@@ -312,6 +312,9 @@
                             <button class="btn btn-outline-success" id="btn-guardar-analisis" disabled>
                                 <i class="fa-solid fa-floppy-disk me-1"></i>Guardar
                             </button>
+                            <button class="btn btn-outline-secondary" id="btn-autosave-toggle" disabled title="Auto-guardado cada 10s">
+                                <i class="fa-solid fa-clock me-1"></i>Auto-guardado: <span id="autosave-label">OFF</span>
+                            </button>
                         </div>
                         <canvas id="canvas-camara" class="d-none"></canvas>
                         <p class="text-muted small mt-2 mb-0" id="camera-status">Cámara detenida.</p>
@@ -326,10 +329,10 @@
                         <div class="p-3 mb-3" style="background:var(--body-bg);border-radius:12px;font-size:.83rem;">
                             <p class="mb-1"><strong>Objeto:</strong> <span id="cam-objeto">–</span></p>
                             <p class="mb-1"><strong>Material:</strong> <span id="cam-material">–</span></p>
-                            <p class="mb-1"><strong>Total:</strong> <span id="cam-total">0</span></p>
+                            <p class="mb-1"><strong>Contados:</strong> <span id="cam-total" class="fw-bold text-success">0</span></p>
                             <p class="mb-0"><strong>Confianza:</strong> <span id="cam-confianza">0.00</span></p>
                         </div>
-                        <div class="row g-2">
+                        <div class="row g-2 mb-3">
                             <div class="col-6">
                                 <div class="p-2" style="background:var(--body-bg);border-radius:10px;">
                                     <div class="fw-semibold mb-1" style="font-size:.78rem;">Detecciones</div>
@@ -343,8 +346,20 @@
                                 </div>
                             </div>
                         </div>
-                        <hr style="border-color:var(--divider);">
-                        <img id="cam-img-proc" class="img-fluid rounded border d-none" alt="Procesada">
+                        <!-- Panel de métricas de depuración -->
+                        <div id="debug-panel" class="p-2 rounded" style="background:#0f172a;font-size:.7rem;font-family:monospace;color:#94a3b8;display:none;">
+                            <div class="d-flex flex-wrap gap-2">
+                                <span>FPS: <strong id="dbg-fps" style="color:#4ade80">–</strong></span>
+                                <span>IDs activos: <strong id="dbg-activos" style="color:#60a5fa">–</strong></span>
+                                <span>Perdidos: <strong id="dbg-perdidos" style="color:#f87171">–</strong></span>
+                                <span>Creados: <strong id="dbg-creados" style="color:#fbbf24">–</strong></span>
+                                <span>Re-IDs: <strong id="dbg-reids" style="color:#a78bfa">–</strong></span>
+                                <span>Contados: <strong id="dbg-contados" style="color:#4ade80">–</strong></span>
+                            </div>
+                        </div>
+                        <button id="btn-debug-toggle" class="btn btn-outline-secondary btn-sm mt-2 w-100" style="font-size:.72rem;">
+                            <i class="fa-solid fa-bug me-1"></i>Mostrar métricas debug
+                        </button>
                     </div>
                 </div>
             </div>
@@ -548,9 +563,13 @@ inputImg?.addEventListener('change', e => {
 const video         = document.getElementById('video-camara');
 const canvasCapture = document.getElementById('canvas-camara');
 const canvasOverlay = document.getElementById('overlay-canvas');
-const btnIniciar    = document.getElementById('btn-iniciar-camara');
-const btnDetener    = document.getElementById('btn-detener-camara');
-const btnGuardar    = document.getElementById('btn-guardar-analisis');
+const btnIniciar       = document.getElementById('btn-iniciar-camara');
+const btnDetener       = document.getElementById('btn-detener-camara');
+const btnGuardar       = document.getElementById('btn-guardar-analisis');
+const btnAutoSave      = document.getElementById('btn-autosave-toggle');
+const autoSaveLabel    = document.getElementById('autosave-label');
+const debugPanel       = document.getElementById('debug-panel');
+const btnDebugToggle   = document.getElementById('btn-debug-toggle');
 const cameraStatus  = document.getElementById('camera-status');
 const captureCtx    = canvasCapture.getContext('2d');
 const overlayCtx    = canvasOverlay.getContext('2d');
@@ -561,15 +580,19 @@ const API_V2  = "{% url 'api_analizar_frame_v2' %}";  // ByteTrack
 const API_V1  = "{% url 'api_analizar_frame' %}";      // fallback
 
 // ── Configuración de cámara ──────────────────────────────────────────────────
-const CAM_W       = 1280;   // resolución de captura
-const CAM_H       = 720;
-const CAPTURE_W   = 1280;   // resolución completa → objetos lejanos visibles para YOLO
-const ANALYSIS_MS = 500;    // con GPU RTX el análisis tarda <200ms → podemos ir rápido
-const PERSIST_MS  = 2500;   // tiempo de persistencia visual de tracks
-const SMOOTH      = 0.22;   // factor de interpolación de posición (0-1)
+const CAM_W         = 1280;
+const CAM_H         = 720;
+const CAPTURE_W     = 1280;
+const ANALYSIS_MS   = 300;   // 300ms → ~3fps análisis, más IoU overlap → menos cambios de ID
+const PERSIST_MS    = 2000;
+const SMOOTH        = 0.18;
+const LINE_X_FRAC   = 0.50;  // línea de conteo VERTICAL al 50% del ancho
 
-let stream = null, intervalId = null, processing = false;
+let stream = null, intervalId = null, autoSaveId = null, processing = false;
+let pendingSave = false;
+let autoSaveEnabled = false;
 let overlayRunning = false;
+const AUTO_SAVE_MS = 10000;
 
 // Track state: map track_id → {x1,y1,x2,y2, label, confianza, color, lastSeen}
 let trackMap = new Map();
@@ -707,11 +730,54 @@ function updateTrackMap(boxes) {
     });
 }
 
+// ── Debug panel ───────────────────────────────────────────────────────────────
+let debugVisible = false;
+btnDebugToggle?.addEventListener('click', () => {
+    debugVisible = !debugVisible;
+    debugPanel.style.display = debugVisible ? 'block' : 'none';
+    btnDebugToggle.innerHTML = debugVisible
+        ? '<i class="fa-solid fa-bug me-1"></i>Ocultar métricas debug'
+        : '<i class="fa-solid fa-bug me-1"></i>Mostrar métricas debug';
+});
+
+function updateDebug(m) {
+    if (!m || !debugVisible) return;
+    document.getElementById('dbg-fps').textContent      = m.fps        ?? '–';
+    document.getElementById('dbg-activos').textContent  = m.ids_activos ?? '–';
+    document.getElementById('dbg-perdidos').textContent = m.ids_perdidos ?? '–';
+    document.getElementById('dbg-creados').textContent  = m.tracks_creados ?? '–';
+    document.getElementById('dbg-reids').textContent    = m.reids_usados ?? '–';
+    document.getElementById('dbg-contados').textContent = m.total_contados ?? '–';
+}
+
 // ── Render loop (RAF) ─────────────────────────────────────────────────────────
 function drawOverlay() {
     if (!overlayRunning) return;
     clearOverlay();
     const now = Date.now();
+    const cw  = canvasOverlay.width;
+    const ch  = canvasOverlay.height;
+
+    // Línea de conteo VERTICAL
+    if (cw > 0 && ch > 0) {
+        const lx = Math.round(cw * LINE_X_FRAC);
+        overlayCtx.save();
+        overlayCtx.strokeStyle = 'rgba(250,204,21,0.65)';
+        overlayCtx.lineWidth   = 2;
+        overlayCtx.setLineDash([10, 6]);
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(lx, 0);
+        overlayCtx.lineTo(lx, ch);
+        overlayCtx.stroke();
+        overlayCtx.setLineDash([]);
+        overlayCtx.fillStyle = 'rgba(250,204,21,0.90)';
+        overlayCtx.font      = 'bold 11px Inter,Arial';
+        overlayCtx.save();
+        overlayCtx.translate(lx + 5, 14);
+        overlayCtx.fillText('conteo', 0, 0);
+        overlayCtx.restore();
+        overlayCtx.restore();
+    }
 
     if (!trackMap.size) {
         overlayCtx.save();
@@ -782,18 +848,32 @@ function drawOverlay() {
 
 // ── Captura y análisis ────────────────────────────────────────────────────────
 async function sendFrame(save = false, resetTracker = false) {
-    if (!stream || processing || !video.videoWidth) return;
+    if (!stream || !video.videoWidth) return;
+
+    // Si estamos procesando, encolar el guardado y salir
+    if (processing) {
+        if (save) pendingSave = true;
+        return;
+    }
+
+    // Consumir la cola de guardado pendiente
+    const doSave = save || pendingSave;
+    pendingSave = false;
+
     processing = true;
-    cameraStatus.textContent = save ? 'Guardando…' : 'Analizando…';
+    if (doSave) {
+        cameraStatus.textContent = 'Guardando…';
+        btnGuardar.disabled = true;
+    }
     resizeCanvases();
     captureCtx.drawImage(video, 0, 0, canvasCapture.width, canvasCapture.height);
-    const b64 = canvasCapture.toDataURL('image/jpeg', 0.88); // más calidad → mejor detección lejana
+    const b64 = canvasCapture.toDataURL('image/jpeg', 0.88);
 
     try {
         const resp = await fetch(API_V2, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-            body:    JSON.stringify({ image: b64, guardar: save, reset: resetTracker }),
+            body:    JSON.stringify({ image: b64, guardar: doSave, reset: resetTracker }),
         });
         const data = await resp.json();
         if (!data.ok) { cameraStatus.textContent = 'Error: ' + (data.error || ''); return; }
@@ -801,13 +881,19 @@ async function sendFrame(save = false, resetTracker = false) {
         const res = data.resultado;
         renderLive(res);
         updateTrackMap(clientNMS(res.boxes || [], 0.50));
+        updateDebug(res.metricas);
 
-        cameraStatus.textContent = save ? 'Guardado.' : `Activa · ${res.total_unicos ?? 0} únicos · ${res.tracks_activos ?? 0} tracks`;
-        if (save && res.guardado && res.residuo) addHistoryCard(res.residuo);
+        if (doSave) {
+            cameraStatus.textContent = res.guardado ? 'Guardado correctamente.' : 'Guardado (sin detecciones).';
+            if (res.guardado && res.residuo) addHistoryCard(res.residuo);
+        } else {
+            cameraStatus.textContent = `Activa · ${res.total_unicos ?? 0} únicos · ${res.tracks_activos ?? 0} tracks`;
+        }
     } catch (e) {
-        cameraStatus.textContent = 'Error de conexión';
+        cameraStatus.textContent = 'Error de conexión al guardar.';
     } finally {
         processing = false;
+        if (stream) btnGuardar.disabled = false;
     }
 }
 
@@ -836,6 +922,8 @@ btnIniciar?.addEventListener('click', async () => {
         // reset=true en el primer frame para limpiar ByteTrack del servidor
         await sendFrame(false, true);
         intervalId = setInterval(() => sendFrame(false), ANALYSIS_MS);
+        autoSaveId = setInterval(() => { if (autoSaveEnabled && trackMap.size > 0) sendFrame(true); }, AUTO_SAVE_MS);
+        btnAutoSave.disabled = false;
         cameraStatus.textContent = 'Cámara iniciada (1280×720 · ByteTrack).';
     } catch (e) {
         alert('Error al iniciar cámara:\n' + e.message);
@@ -845,11 +933,16 @@ btnIniciar?.addEventListener('click', async () => {
 
 btnDetener?.addEventListener('click', () => {
     clearInterval(intervalId); intervalId = null;
+    clearInterval(autoSaveId); autoSaveId = null;
     stream?.getTracks().forEach(t => t.stop()); stream = null;
     video.srcObject = null;
     overlayRunning = false; clearOverlay();
-    trackMap.clear(); processing = false;
-    btnIniciar.disabled = false; btnDetener.disabled = true; btnGuardar.disabled = true;
+    trackMap.clear(); processing = false; pendingSave = false;
+    autoSaveEnabled = false;
+    btnIniciar.disabled = false; btnDetener.disabled = true;
+    btnGuardar.disabled = true; btnAutoSave.disabled = true;
+    autoSaveLabel.textContent = 'OFF';
+    btnAutoSave.className = 'btn btn-outline-secondary';
     ['cam-objeto','cam-material','cam-total','cam-confianza'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.textContent = id.includes('total') || id.includes('confianza') ? '0' : '–';
@@ -857,9 +950,21 @@ btnDetener?.addEventListener('click', () => {
     cameraStatus.textContent = 'Cámara detenida.';
 });
 
-btnGuardar?.addEventListener('click', async () => {
+btnGuardar?.addEventListener('click', () => {
     if (!stream) { alert('Primero inicia la cámara.'); return; }
-    await sendFrame(true);
+    cameraStatus.textContent = 'Guardando en el próximo frame…';
+    sendFrame(true);
+});
+
+btnAutoSave?.addEventListener('click', () => {
+    autoSaveEnabled = !autoSaveEnabled;
+    autoSaveLabel.textContent = autoSaveEnabled ? 'ON' : 'OFF';
+    btnAutoSave.className = autoSaveEnabled
+        ? 'btn btn-success'
+        : 'btn btn-outline-secondary';
+    cameraStatus.textContent = autoSaveEnabled
+        ? 'Auto-guardado activado (cada 10s con detecciones).'
+        : 'Auto-guardado desactivado.';
 });
 </script>
 

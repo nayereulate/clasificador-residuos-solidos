@@ -1,0 +1,341 @@
+{% extends 'base.html' %}
+{% block title %}Proyección de Ingresos{% endblock %}
+
+{% block extra_css %}
+<style>
+.kpi-card { border-radius: 14px; padding: 20px 24px; }
+.kpi-val  { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.kpi-lbl  { font-size: .78rem; color: var(--text-muted); margin-top: 4px; }
+.chart-wrap { position: relative; height: 260px; }
+.pct-bar { height: 8px; border-radius: 99px; background: var(--card-border); margin-top: 4px; }
+.pct-fill { height: 100%; border-radius: 99px; transition: width .4s; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Encabezado -->
+<div class="d-flex align-items-start justify-content-between mb-4 flex-wrap gap-3">
+    <div>
+        <h1 class="h4 fw-700 mb-1" style="color:var(--text-primary)">
+            <i class="fa-solid fa-chart-pie me-2" style="color:#52b788"></i>Proyección de Ingresos
+        </h1>
+        <p class="text-muted small mb-0">
+            Cruza residuos registrados · peso medio de aceptados · precios configurados
+            {% if fecha_desde or fecha_hasta %}
+            <span class="badge bg-info ms-2">
+                Tanda: {{ fecha_desde|default:"inicio" }} → {{ fecha_hasta|default:"hoy" }}
+            </span>
+            {% else %}
+            <span class="badge bg-secondary ms-2">Histórico completo</span>
+            {% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'contabilidad:lista_precios' %}" class="btn btn-sm btn-outline-warning">
+            <i class="fa-solid fa-tags me-1"></i>Configurar precios
+        </a>
+        <a href="{% url 'contabilidad:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="fa-solid fa-arrow-left me-1"></i>Volver
+        </a>
+    </div>
+</div>
+
+<!-- Filtro de tanda -->
+<div class="card mb-4 border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+    <div class="card-body p-3">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-600">Desde (tanda)</label>
+                <input type="date" name="desde" class="form-control form-control-sm" value="{{ fecha_desde }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-600">Hasta (tanda)</label>
+                <input type="date" name="hasta" class="form-control form-control-sm" value="{{ fecha_hasta }}">
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-success btn-sm w-100">
+                    <i class="fa-solid fa-calculator me-1"></i>Calcular tanda
+                </button>
+                <a href="{% url 'contabilidad:proyeccion' %}" class="btn btn-outline-secondary btn-sm w-100">
+                    <i class="fa-solid fa-globe me-1"></i>Total
+                </a>
+            </div>
+            <div class="col-md-3 text-muted" style="font-size:.76rem; line-height:1.4;">
+                Sin fechas = proyección de <strong>todos</strong> los residuos registrados.
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if usa_grammar_alguno %}
+<div class="alert alert-info py-2 mb-3 small">
+    <i class="fa-solid fa-brain me-1"></i>
+    <strong>Grammar Engine:</strong> el peso medio de algunos materiales se obtuvo automáticamente de los pesos genéricos definidos en las reglas (no hay aún aceptados con peso real para esos materiales).
+    Los valores con <span class="badge bg-info text-dark" style="font-size:.65rem;">GE</span> usan esa estimación.
+</div>
+{% endif %}
+{% if sin_precios %}
+<div class="alert alert-warning py-2 mb-4 small">
+    <i class="fa-solid fa-triangle-exclamation me-1"></i>
+    Sin precio configurado para: <strong>{{ sin_precios|join:", " }}</strong>.
+    <a href="{% url 'contabilidad:lista_precios' %}" class="alert-link ms-1">Configurar precios</a>
+</div>
+{% endif %}
+
+<!-- KPIs -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+        <div class="kpi-card border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="kpi-val" style="color:#3b82f6">{{ total_residuos }}</div>
+            <div class="kpi-lbl">Residuos registrados</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="kpi-card border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="kpi-val" style="color:#52b788">{{ total_kg_real }} kg</div>
+            <div class="kpi-lbl">Peso real (aceptados)</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="kpi-card border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="kpi-val" style="color:#f59e0b">{{ total_kg_estimado }} kg</div>
+            <div class="kpi-lbl">Peso estimado (todos los registrados)</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="kpi-card border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="d-flex gap-3">
+                <div>
+                    <div class="kpi-val text-success">${{ total_ing_estimado }}</div>
+                    <div class="kpi-lbl">Ingreso estimado</div>
+                </div>
+                <div style="border-left:1px solid var(--divider); padding-left:12px;">
+                    <div class="kpi-val" style="font-size:1.1rem; color:#52b788">${{ total_ing_real }}</div>
+                    <div class="kpi-lbl">Ingreso real</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gráficos fila 1 -->
+<div class="row g-3 mb-3">
+    <div class="col-lg-6">
+        <div class="card border-0 h-100" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-body p-4">
+                <h6 class="fw-600 mb-3">
+                    <i class="fa-solid fa-circle-half-stroke me-2" style="color:#3b82f6"></i>
+                    Distribución de residuos por material (%)
+                </h6>
+                <div class="chart-wrap"><canvas id="chartResidуos"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card border-0 h-100" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-body p-4">
+                <h6 class="fw-600 mb-3">
+                    <i class="fa-solid fa-circle-half-stroke me-2" style="color:#52b788"></i>
+                    Ingreso estimado por material (%)
+                </h6>
+                <div class="chart-wrap"><canvas id="chartIngEst"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gráficos fila 2 -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="card border-0 h-100" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-body p-4">
+                <h6 class="fw-600 mb-3">
+                    <i class="fa-solid fa-weight-hanging me-2" style="color:#f59e0b"></i>
+                    Kg real (aceptados) vs Kg estimado (todos)
+                </h6>
+                <div class="chart-wrap"><canvas id="chartKg"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card border-0 h-100" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+            <div class="card-body p-4">
+                <h6 class="fw-600 mb-3">
+                    <i class="fa-solid fa-coins me-2" style="color:#52b788"></i>
+                    Ingreso real vs Ingreso estimado (Bs)
+                </h6>
+                <div class="chart-wrap"><canvas id="chartIngresos"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabla detallada por material -->
+<div class="card border-0" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+    <div class="card-header" style="background:transparent;border-bottom:1px solid var(--table-border)">
+        <span class="fw-600"><i class="fa-solid fa-table me-2"></i>Detalle por material</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 small align-middle">
+                <thead style="background:var(--table-head-bg)">
+                    <tr>
+                        <th class="ps-3">Material</th>
+                        <th class="text-end">Registrados</th>
+                        <th class="text-end">Aceptados c/peso</th>
+                        <th class="text-end">Kg reales</th>
+                        <th class="text-end">Peso medio</th>
+                        <th class="text-end">Kg estimados</th>
+                        <th class="text-end">Precio/kg</th>
+                        <th class="text-end">Ing. estimado</th>
+                        <th class="text-end pe-3">Ing. real</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in tabla %}
+                    <tr>
+                        <td class="ps-3 fw-semibold">{{ r.material }}</td>
+                        <td class="text-end">
+                            {{ r.count_reg }}
+                            <div class="pct-bar"><div class="pct-fill bg-primary" style="width:{{ r.pct_residuos }}%"></div></div>
+                            <span class="text-muted" style="font-size:.7rem;">{{ r.pct_residuos }}%</span>
+                        </td>
+                        <td class="text-end text-muted">{{ r.count_peso }}</td>
+                        <td class="text-end">{{ r.kg_real }} kg</td>
+                        <td class="text-end fw-600" style="color:#f59e0b;">
+                            {% if r.peso_medio %}
+                                {{ r.peso_medio }} kg
+                                {% if r.usa_grammar %}
+                                <span class="badge bg-info text-dark ms-1" style="font-size:.6rem;"
+                                      title="Peso genérico del Grammar Engine">GE</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if r.kg_estimado %}{{ r.kg_estimado }} kg{% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if r.tiene_precio %}
+                            <span class="text-success">${{ r.precio_kg }}</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark" style="font-size:.65rem;">Sin precio</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end fw-700 text-success">
+                            {% if r.ing_estimado %}${{ r.ing_estimado }}{% else %}—{% endif %}
+                            {% if r.ing_estimado %}<div class="pct-bar"><div class="pct-fill bg-success" style="width:{{ r.pct_ing_est }}%"></div></div>
+                            <span class="text-muted" style="font-size:.7rem;">{{ r.pct_ing_est }}%</span>{% endif %}
+                        </td>
+                        <td class="text-end pe-3" style="color:#52b788;">
+                            {% if r.ing_real %}${{ r.ing_real|floatformat:2 }}{% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center py-5 text-muted">
+                            <i class="fa-solid fa-box-open fa-2x mb-2" style="opacity:.3"></i>
+                            <p class="mb-0">No hay residuos registrados en el rango seleccionado.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if tabla %}
+                <tfoot style="background:var(--table-head-bg); font-weight:700;">
+                    <tr>
+                        <td class="ps-3">TOTAL</td>
+                        <td class="text-end">{{ total_residuos }}</td>
+                        <td></td>
+                        <td class="text-end">{{ total_kg_real }} kg</td>
+                        <td></td>
+                        <td class="text-end">{{ total_kg_estimado }} kg</td>
+                        <td></td>
+                        <td class="text-end text-success">${{ total_ing_estimado }}</td>
+                        <td class="text-end pe-3" style="color:#52b788;">${{ total_ing_real|floatformat:2 }}</td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const D = {{ charts_json|safe }};
+
+const PIE_OPTS = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+            callbacks: {
+                label: ctx => ` ${ctx.label}: ${ctx.parsed.toFixed(1)}%`
+            }
+        }
+    }
+};
+
+const BAR_OPTS = (yLabel) => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+        y: { beginAtZero: true, title: { display: true, text: yLabel } },
+        x: { ticks: { font: { size: 10 } } }
+    }
+});
+
+// Pie 1 — distribución residuos
+new Chart(document.getElementById('chartResidуos'), {
+    type: 'doughnut',
+    data: {
+        labels: D.labels,
+        datasets: [{ data: D.pct_residuos, backgroundColor: D.colores, borderWidth: 1 }]
+    },
+    options: PIE_OPTS
+});
+
+// Pie 2 — ingreso estimado
+new Chart(document.getElementById('chartIngEst'), {
+    type: 'doughnut',
+    data: {
+        labels: D.labels,
+        datasets: [{ data: D.pct_ing_est, backgroundColor: D.colores, borderWidth: 1 }]
+    },
+    options: PIE_OPTS
+});
+
+// Bar — kg real vs estimado
+new Chart(document.getElementById('chartKg'), {
+    type: 'bar',
+    data: {
+        labels: D.labels,
+        datasets: [
+            { label: 'Kg real (aceptados)', data: D.kg_real,      backgroundColor: 'rgba(82,183,136,.75)',  borderRadius: 5 },
+            { label: 'Kg estimado (todos)', data: D.kg_estimado,   backgroundColor: 'rgba(245,158,11,.65)',  borderRadius: 5 },
+        ]
+    },
+    options: BAR_OPTS('Kilogramos')
+});
+
+// Bar — ingreso real vs estimado
+new Chart(document.getElementById('chartIngresos'), {
+    type: 'bar',
+    data: {
+        labels: D.labels,
+        datasets: [
+            { label: 'Ingreso real (Bs)',     data: D.ing_real,      backgroundColor: 'rgba(82,183,136,.75)',  borderRadius: 5 },
+            { label: 'Ingreso estimado (Bs)', data: D.ing_estimado,  backgroundColor: 'rgba(59,130,246,.65)',  borderRadius: 5 },
+        ]
+    },
+    options: BAR_OPTS('Bolivianos (Bs)')
+});
+</script>
+{% endblock %}

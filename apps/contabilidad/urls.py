@@ -14,4 +14,7 @@ urlpatterns = [
     path("contabilidad/egresos/<int:pk>/editar/",   views.editar_egreso,     name="editar_egreso"),
     path("contabilidad/egresos/<int:pk>/eliminar/", views.eliminar_egreso,   name="eliminar_egreso"),
     path("contabilidad/api/grafico/",               views.api_datos_grafico, name="api_grafico"),
+    path("contabilidad/precios/",                   views.lista_precios,     name="lista_precios"),
+    path("contabilidad/precios/guardar/",           views.guardar_precio,    name="guardar_precio"),
+    path("contabilidad/proyeccion/",                views.proyeccion,        name="proyeccion"),
 ]

@@ -10,6 +10,9 @@ class EntradaHistorial(models.Model):
         ('CREAR',     'Crear registro'),
         ('EDITAR',    'Editar registro'),
         ('ELIMINAR',  'Eliminar registro'),
+        ('ACEPTAR',   'Aceptar residuo'),
+        ('RECHAZAR',  'Rechazar residuo'),
+        ('PRECIO',    'Actualizar precio'),
         ('LOGIN',     'Iniciar sesión'),
         ('LOGOUT',    'Cerrar sesión'),
         ('SISTEMA',   'Evento del sistema'),
@@ -18,9 +21,9 @@ class EntradaHistorial(models.Model):
     MODULOS = [
         ('clasificacion',  'Detección IA'),
         ('administracion', 'Administración'),
+        ('contabilidad',   'Contabilidad'),
         ('historial',      'Historial'),
         ('reportes',       'Reportes'),
-        ('recoleccion',    'Recolección'),
         ('usuarios',       'Usuarios'),
     ]
 

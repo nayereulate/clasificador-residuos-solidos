@@ -9,7 +9,16 @@
         </h1>
         <p class="text-muted small mb-0">Gestión financiera del ciclo de reciclaje</p>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="{% url 'contabilidad:proyeccion' %}" class="btn btn-sm btn-success">
+            <i class="fa-solid fa-chart-pie me-1"></i>Proyección
+        </a>
+        <a href="{% url 'contabilidad:lista_precios' %}" class="btn btn-sm btn-outline-warning">
+            <i class="fa-solid fa-tags me-1"></i>Precios/Material
+        </a>
+        <a href="{% url 'contabilidad:lista_ingresos' %}" class="btn btn-sm btn-outline-success">
+            <i class="fa-solid fa-list me-1"></i>Ingresos
+        </a>
         <a href="{% url 'contabilidad:crear_ingreso' %}" class="btn btn-sm btn-success">
             <i class="fa-solid fa-plus me-1"></i>Ingreso
         </a>
@@ -170,6 +179,46 @@
         </div>
     </div>
 </div>
+
+<!-- Resumen por material -->
+{% if resumen_material %}
+<div class="card border-0 mt-4" style="background:var(--card-bg);box-shadow:var(--card-shadow)">
+    <div class="card-header d-flex justify-content-between align-items-center" style="background:transparent;border-bottom:1px solid var(--table-border)">
+        <span class="fw-600"><i class="fa-solid fa-recycle me-2"></i>Ingresos por Material</span>
+        <a href="{% url 'contabilidad:lista_precios' %}" class="btn btn-sm btn-outline-warning">
+            <i class="fa-solid fa-tags me-1"></i>Ver Precios
+        </a>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0 small">
+            <thead style="background:var(--table-head-bg)">
+                <tr>
+                    <th class="ps-3">Material</th>
+                    <th>Total kg procesados</th>
+                    <th>Total ingresos</th>
+                    <th class="pe-3">Precio actual/kg</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for fila in resumen_material %}
+                <tr>
+                    <td class="ps-3 fw-semibold">{{ fila.material }}</td>
+                    <td>{{ fila.kg|floatformat:2 }} kg</td>
+                    <td class="text-success fw-600">${{ fila.monto|floatformat:2 }}</td>
+                    <td class="pe-3 text-muted">
+                        {% if fila.precio_kg %}
+                        ${{ fila.precio_kg }}/kg
+                        {% else %}
+                        <span class="text-warning">Sin precio</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 
 {% endblock %}
 

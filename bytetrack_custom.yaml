@@ -1,25 +1,33 @@
-# ByteTrack personalizado — seguimiento estable sin duplicados
+# ByteTrack calibrado para detección de residuos
+# ─────────────────────────────────────────────────────────────────────────────
+# NOTA IMPORTANTE sobre match_thresh:
+#   Este valor es una DISTANCIA MÁXIMA en la matriz de costos (1 - IoU).
+#   0.80 → acepta matches con IoU ≥ 0.20  (LENIENTE → menos cambios de ID)
+#   0.65 → acepta matches con IoU ≥ 0.35  (muy estricto → muchos ID nuevos)
+#   Con análisis a 300-500ms, los objetos se mueven bastante entre frames,
+#   por eso necesitamos un match_thresh ALTO.
 tracker_type: bytetrack
 
-# --- Umbrales de confianza ------------------------------------------------
-# Detecciones fuertes: asociación primaria + creación de nuevos tracks
-track_high_thresh: 0.20
+# ── Umbrales de confianza ────────────────────────────────────────────────────
+# Detecciones "fuertes": usadas para asociación primaria y crear nuevos tracks
+track_high_thresh: 0.40
 
-# Detecciones débiles: solo mantienen tracks EXISTENTES, no crean nuevos
-# Permite seguir objetos lejanos sin generar falsos positivos
-track_low_thresh: 0.08
+# Detecciones "débiles": solo mantienen tracks EXISTENTES (no crean nuevos)
+track_low_thresh: 0.10
 
-# Umbral mínimo para CREAR un nuevo track (más alto = menos falsos positivos)
-new_track_thresh: 0.25
+# Umbral para CREAR un track nuevo (≥ track_high_thresh para consistencia)
+new_track_thresh: 0.45
 
-# --- Memoria ---------------------------------------------------------------
-# Frames que un track sobrevive sin ser detectado (~3 s a 30 fps con GPU)
+# ── Memoria ──────────────────────────────────────────────────────────────────
+# Frames que un track sobrevive sin ser detectado
+# Con 2fps de análisis: 90 frames ≈ 45 s de memoria → re-asociación robusta
 track_buffer: 90
 
-# --- Asociación -----------------------------------------------------------
-# IoU máximo para considerar dos dets el mismo objeto
-# 0.80 = bastante tolerante → mantiene IDs aunque el objeto se mueva rápido
+# ── Asociación ───────────────────────────────────────────────────────────────
+# Distancia máxima permitida para match (1 - IoU).
+# 0.80 → el objeto puede moverse bastante entre frames y seguir siendo el mismo.
+# Este es el parámetro MÁS IMPORTANTE para estabilidad de IDs.
 match_thresh: 0.80
 
-# Funde score de detección con IoU en la asignación → más preciso
+# Combina score de detección con IoU en la asignación → IDs más estables
 fuse_score: true

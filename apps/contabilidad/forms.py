@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import Ingreso, Egreso, CategoriaIngreso, CategoriaEgreso
+from .models import Ingreso, Egreso, CategoriaIngreso, CategoriaEgreso, PrecioMaterial
 
 
 class IngresoForm(forms.ModelForm):
@@ -30,4 +30,15 @@ class EgresoForm(forms.ModelForm):
             "monto": forms.NumberInput(attrs={"class": "form-control", "step": "0.01", "min": "0"}),
             "descripcion": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "fecha": forms.DateInput(attrs={"class": "form-control", "type": "date"}),
+        }
+
+
+class PrecioMaterialForm(forms.ModelForm):
+    class Meta:
+        model = PrecioMaterial
+        fields = ["material", "precio_por_kg", "activo", "notas"]
+        widgets = {
+            "material": forms.Select(attrs={"class": "form-select"}),
+            "precio_por_kg": forms.NumberInput(attrs={"class": "form-control", "step": "0.01", "min": "0"}),
+            "notas": forms.Textarea(attrs={"class": "form-control", "rows": 2}),
         }

@@ -37,7 +37,7 @@ def _resumen_desde_resultado(resultado):
     boxes = resultado.get("boxes", [])
 
     if detecciones:
-        objeto_principal = detecciones[0]["nombre"]
+        objeto_principal = detecciones[0].get("nombre", "Sin detección")
         confianza = max(item.get("confianza", 0) for item in detecciones)
     else:
         objeto_principal = "Sin detección"
@@ -277,14 +277,24 @@ def api_analizar_frame_v2(request):
         tracker         = get_cam_tracker()
         detecciones     = tracker.update(detecciones_raw)
 
+        # ── Conteo acumulado (para mostrar en pantalla) ────────────────────
         conteo_unico  = tracker.get_conteo_unico()
         total_unicos  = tracker.get_total_unicos()
 
+        # ── Conteo del frame ACTUAL: solo tracks visibles ahora ────────────
+        # Evita contar el mismo objeto físico N veces por IDs distintos
+        conteo_frame = {}
+        confianza_max = 0.0
+        for d in detecciones:
+            if d.get("estado") in ("detectado", "detectando"):
+                clase = d["clase_dominante"]
+                if clase not in ("Detectando...",):
+                    conteo_frame[clase] = conteo_frame.get(clase, 0) + 1
+                confianza_max = max(confianza_max, d.get("confianza_promedio", 0))
+
         objeto_principal = (
-            max(conteo_unico, key=conteo_unico.get) if conteo_unico else "Sin detección"
-        )
-        confianza_max = max(
-            (d["confianza_promedio"] for d in detecciones), default=0.0
+            max(conteo_frame, key=conteo_frame.get) if conteo_frame
+            else (max(conteo_unico, key=conteo_unico.get) if conteo_unico else "Sin detección")
         )
 
         boxes = [
@@ -296,10 +306,14 @@ def api_analizar_frame_v2(request):
                 "label":     d["clase_dominante"],
                 "track_id":  d.get("track_id"),
                 "confianza": d["confianza_promedio"],
-                "color":     "#00c853",
+                "color":     d.get("color", "#52b788"),
             }
             for d in detecciones
         ]
+
+        total_frame = sum(conteo_frame.values())
+
+        metricas = tracker.get_metricas()
 
         respuesta = {
             "objeto_principal":    objeto_principal,
@@ -314,6 +328,7 @@ def api_analizar_frame_v2(request):
             "total_unicos":        total_unicos,
             "conteo_unico":        conteo_unico,
             "tracks_activos":      len(detecciones),
+            "metricas":            metricas,
         }
 
         if guardar:
@@ -321,9 +336,14 @@ def api_analizar_frame_v2(request):
             nombre_archivo = f"{nombre_base}.jpg"
             residuo = Residuo()
             residuo.imagen.save(nombre_archivo, ContentFile(imagen_bytes), save=False)
-            residuo.tipo      = objeto_principal
+            # objeto_principal desde conteo_unico (objetos formalmente contados)
+            objeto_guardado = (
+                max(conteo_unico, key=conteo_unico.get) if conteo_unico else objeto_principal
+            )
+            residuo.tipo      = objeto_guardado
             residuo.categoria = "Pendiente"
             residuo.confianza = confianza_max
+            # Guardar los objetos CONTADOS (cruzaron línea o fueron estables)
             residuo.resultado_json = {
                 "objetos":          conteo_unico,
                 "total":            total_unicos,
@@ -333,7 +353,7 @@ def api_analizar_frame_v2(request):
             }
             residuo.save()
             _log(request, "ANALIZAR",
-                 f"Frame cámara guardado (ByteTrack): {objeto_principal}", residuo)
+                 f"Frame cámara guardado — contados: {conteo_unico}", residuo)
             respuesta["guardado"] = True
             respuesta["residuo"]  = {
                 "id":            residuo.id,
